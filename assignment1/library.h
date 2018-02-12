@@ -10,8 +10,8 @@ typedef struct {
 	void *data;
 	int page_size;
 	int slot_size;
-	int bitmapLength;
-	int used_slots;
+	//int bitmapLength;
+	//int used_slots;
 } Page;
 // implement serialization of fixed length records.
 
