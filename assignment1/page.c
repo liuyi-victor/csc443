@@ -1,5 +1,6 @@
 #include <library.h>
 #include <string.h>
+#include <math.h>
 
 void init_fixed_len_page(Page *page, int page_size, int slot_size)
 {
@@ -10,21 +11,24 @@ void init_fixed_len_page(Page *page, int page_size, int slot_size)
 	page->data = malloc(sizeof(page_size));
 	page->page_size = page_size;
 	page->slot_size = slot_size;
-	page->used_slots = 0;
+	//page->used_slots = 0;
 	int capacity = fixed_len_page_capacity(page);
-	page->bitmapLength = 1 + ((capacity-1) / BYTE_SIZE);
+	//page->bitmapLength = 1 + ((capacity-1) / BYTE_SIZE);
+	int bitmapLength = ceil(capacity/BYTE_SIZE);	// round up (capacity / BYTE_SIZSE)
 	memset(page->data, capacity, sizeof(int));
-	memset(((unsigned char *)page->data + 1), '\0', page->bitmapLength);
+	memset(((unsigned char *)page->data + 1), '\0', bitmapLength);	//page->bitmapLength);
 }
 
 int fixed_len_page_capacity(Page *page)
 {
+	//int directoryLength = 1 + (capacity - 1)/8;
 	return BYTE_SIZE*(page->page_size - sizeof(int)) / (page->slot_size + 1);
 }
 
 int fixed_len_page_freeslots(Page *page)
 {
-	return fixed_len_page_capacity(page) - page->used_slots;
+	//return fixed_len_page_capacity(page) - page->used_slots;
+	int bitmapLength = 
 }
 
 int add_fixed_len_page(Page *page, Record *r)
