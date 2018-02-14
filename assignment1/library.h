@@ -1,7 +1,13 @@
+#ifndef LIBRARY_H
+#define LIBRARY_H
+
 #include <vector>
+#include <stdio.h>
 #include <stdlib.h>
 
 #define BYTE_SIZE 8
+#define numAttribute 100
+#define lengthAttribute 10
 
 typedef const char* V;
 typedef std::vector<V> Record;
@@ -14,6 +20,11 @@ typedef struct {
 	//int bitmapLength;
 	//int used_slots;
 } Page;
+
+typedef struct {
+	long offset;
+	int freeslots;
+} PageEntry;
 
 typedef struct {
 	FILE *file_ptr;
@@ -49,6 +60,7 @@ void fixed_len_write(Record *record, void *buf);
  */
 void fixed_len_read(void *buf, int size, Record *record);
 
+// page operations
 // Initializes a page using the given slot size
 void init_fixed_len_page(Page *page, int page_size, int slot_size);
 
@@ -84,4 +96,5 @@ void read_page(Heapfile *heapfile, PageID pid, Page *page);
 
 // Write a page from memory to disk.
 void write_page(Page *page, Heapfile *heapfile, PageID pid);
+#endif
 

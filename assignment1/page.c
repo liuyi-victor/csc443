@@ -1,4 +1,4 @@
-#include <library.h>
+#include "library.h"
 #include <string.h>
 #include <math.h>
 
@@ -91,15 +91,17 @@ void write_fixed_len_page(Page *page, int slot, Record *r)
 void read_fixed_len_page(Page *page, int slot, Record *r)
 {
 	if(r == NULL)
-		r = 
+		r = std::vector<V>();
 	int tuple_size = fixed_len_sizeof(r);
 	int capacity = fixed_len_page_capacity(page);
 	int bitmapLength = ceil(capacity/BYTE_SIZE);
 	//get the pointer to the memory that directly points to slot for the tuple
 	unsigned char *tuple = (unsigned char *)page->data + sizeof(int) + bitmapLength + slot * tuple_size;
-	for(j = 0; j < r->size(); j++)
+	unsigned char *buffer = malloc();
+	for(j = 0; j < numAttribute; j++)
 	{
-		strncpy(tuple, r[j], 100);
-		tuple = tuple + 100;
+		strncpy(buffer, tuple, lengthAttribute);
+		r->pushback(buffer);
+		tuple = tuple + lengthAttribute;
 	}
 }
