@@ -173,8 +173,12 @@ void init_heapfile(Heapfile *heapfile, int page_size, FILE *file)
 // Allocate another page in the heapfile. This grows the file by a page.
 PageID alloc_page(Heapfile *heapfile)
 {
-	readHeapfileDirectory
-	
+	FILE *stream = heapfile->file_ptr;
+	writeHeapfileDirectory
+	fseek(stream, 0, SEEK_END);
+	unsigned char array[heapfile->page_size] = { 0x0 };
+	fwrite(array, heapfile->page_size, 1, stream);
+	rewind(heapfile->page_size);
 }
 
 // Read a page into memory.
@@ -192,14 +196,15 @@ void read_page(Heapfile *heapfile, PageID pid, Page *page)
 void readHeapfileDirectory(Heapfile *heapfile, PageID id, PageEntry *entry)
 {
 	FILE *stream = heapfile->file_ptr;
-	buffer = malloc(heapfile->page_size);
+	int pagesize = heapfile->page_size
+	unsigned char *buffer[pagesize];
 	long *ptr;
 	PageID index = pid;
 	entryPerPage = (pagesize - sizeof(long))/sizeof(PageEntry);
 	while(entryPerPage < index)
 	{
 		fread(buffer, heapfile->page_size, 1, stream);
-		ptr = buffer
+		ptr = (long *)buffer;
 		nextdir = ptr[0];
 		fseek(stream, nextdir, SEEK_SET);
 		index -= entryPerPage;
@@ -214,7 +219,31 @@ void writeHeapfileDirectory(Heapfile *heapfile, PageID pid, unsigned char isAllo
 	FILE *stream = heapfile->file_ptr;
 	int pagesize = heapfile->page_size
 	long *ptr;
+	long nextdir;
+	unsigned char *buffer[pagesize];
 	PageEntry *entry;
+	if(pid > 0)
+	{
+		PageID index = pid;
+		entryPerPage = (pagesize - sizeof(long))/sizeof(PageEntry);
+		while(entryPerPage < index)
+		{
+			// assuming page ID is reasonable
+			fread(buffer, heapfile->page_size, 1, stream);
+			ptr = (long *)buffer;
+			nextdir = ptr[0];
+			if(nextdir < 0)
+				return;
+			fseek(stream, nextdir, SEEK_SET);
+			index -= entryPerPage;
+		}
+		fread(ptr, heapfile->page_size, 1, stream);
+		entry[index].
+	}
+	else if(pid < 0)
+	{
+		
+	}
 	if(isAllocate > 0)
 	{
 		buffer = malloc(pagesize);
@@ -251,4 +280,9 @@ void write_page(Page *page, Heapfile *heapfile, PageID pid)
 	long offset = pid * heapfile->page_size; 	//entry.offset;
 	fseek(stream, offset, SEEK_SET);
 	fwrite(page->data, page->page_size, 1, stream);
+}
+
+RecordIterator::RecordIterator(Heapfile *heapfile)
+{
+	
 }
