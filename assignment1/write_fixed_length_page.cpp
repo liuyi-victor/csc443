@@ -1,5 +1,5 @@
 #include "library.h"
-#include "csvhelper.h"
+//#include "csvhelper.h"
 #include <sys/timeb.h>
 
 /**
@@ -18,10 +18,11 @@ int main(int argc, char** argv)
 	}
 
 	//Open page file.
-	FILE* page_file = fopen(argv[2], "w+b");
-	if(!page_file)
+	FILE* stream = fopen(argv[2], "w+");	//"w+b");
+	if(stream = NULL)
 	{
-		printf("Failed to open page file: %s\n", argv[2]);
+		//printf("Failed to open page file %s: %s\n", argv[2], strerror(errno));
+		perror("Failed to open page file %s: ", argv[2]);
 		return 2;
 	}
 
@@ -31,41 +32,40 @@ int main(int argc, char** argv)
 	std::vector<Record*> records;
 	read_records(argv[1], &records);
 
-	//Record start time of program.
-	//We do not include parsing of the csv because that is irrelevant to our metrics.
+	//record the time that the insertion started
 	struct timeb t;
 	ftime(&t);
 	long start_ms = t.time * 1000 + t.millitm;
 
-	//Create initial page
-	Page* page = (Page*)malloc(sizeof(Page));;
+	//Create the page
+	Page *page = (Page *)malloc(sizeof(Page));;
 	init_fixed_len_page(page, page_size, record_size);
-	int page_counter = 1;
+	int pagecount = 1;
 
 	//Add records to pages
 	for(int i = 0; i < records.size(); i++)
 	{
 		if(add_fixed_len_page(page, records.at(i)) == -1)
 		{
-		    //Write page to file.
-		    fwrite(page->data, 1, page->page_size, page_file);
-		    fflush(page_file);
+			//The page is full, write page to file.
+			fwrite(page->data, page->page_size, 1, stream);
+			fflush(stream);
 
-		    //Create new page.
-		    free_fixed_len_page(page);
-		    init_fixed_len_page(page, page_size, record_size);
-		    add_fixed_len_page(page, records.at(i));
-		    page_counter++;
+			//Create new page.
+			//free_fixed_len_page(page);
+			init_fixed_len_page(page, page_size, record_size);
+			add_fixed_len_page(page, records.at(i));
+			pagecount++;
 		}
 	}
 
 	//Write final page to file.
-	fwrite(page->data, 1, page->page_size, page_file);
-	fflush(page_file);
-	fclose(page_file);
+	fwrite(page->data, page->page_size, 1, stream);
+	fflush(stream);
+	fclose(stream);
 
 	//Release page memory.
-	free_fixed_len_page(page);
+	free(page->data);
 	free(page);
 
 	//Calculate program end time.
@@ -74,7 +74,7 @@ int main(int argc, char** argv)
 
 	//Print metrics.
 	printf("NUMBER OF RECORDS: %lu\n", records.size());
-	printf("NUMBER OF PAGES: %i\n", page_counter);
+	printf("NUMBER OF PAGES: %i\n", pagecount);
 	printf("TIME: %lu\n", end_ms - start_ms);
 }
 
