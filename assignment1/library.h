@@ -4,6 +4,7 @@
 #include <vector>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
 #define BYTE_SIZE 8
 #define numAttribute 100
@@ -37,6 +38,10 @@ typedef struct {
 } RecordID;
 
 class RecordIterator {
+	Heapfile *file;
+	FILE *stream;
+	long current;
+	long currdir;
     public:
         RecordIterator(Heapfile *heapfile);
         Record next();
@@ -96,5 +101,8 @@ void read_page(Heapfile *heapfile, PageID pid, Page *page);
 
 // Write a page from memory to disk.
 void write_page(Page *page, Heapfile *heapfile, PageID pid);
+
+// fetch a page entry from the directory of the heapfile
+void readHeapfileDirectory(Heapfile *heapfile, PageID id, PageEntry *entry);
 #endif
 

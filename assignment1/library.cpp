@@ -166,19 +166,20 @@ void init_heapfile(Heapfile *heapfile, int page_size, FILE *file)
 	{
 		heapfile = (Heapfile *)malloc(sizeof(Heapfile));
 	}
+	rewind(file);		//make sure that the file stream is at the head of the file
 	heapfile->page_size = page_size;
 	heapfile->file_ptr = file;
-	unsigned char *buffer[page_size] = { 0 };
-	long pointer = -1;
-	fwrite(&pointer, sizeof(long), 1, file);
+	unsigned char buffer[page_size] = { 0 };
+	//long pointer = -1;
+	//fwrite(&pointer, sizeof(long), 1, file);
+	int entryPerPage = page_size/sizeof(PageEntry);
 	PageEntry directoryEntry = (PageEntry *)buffer;
-	directoryEntry[0].offset = ptr;
-	directoryEntry[0].freeslots = pagesize;
-	for(i = 1; i < entryPerPage; i++)
+	for(i = 0; i < entryPerPage; i++)
 	{
+		// initialize all page pointers to -1 (NULL)
 		directoryEntry[i].offset = -1;
 	}
-	//fwrite(buffer, page_size, 1, file);
+	fwrite(buffer, page_size, 1, heapfile->file_ptr);
 	rewind(heapfile->file_ptr);
 }
 
@@ -189,34 +190,42 @@ PageID alloc_page(Heapfile *heapfile)
 	// 2. initialize the a page to all zeros by writing past the eof pagesize bytes
 	// 3. update the directory by appending a new page entry
 	FILE *stream = heapfile->file_ptr;
-	//writeHeapfileDirectory
+
+	// 1. goto the end of the file and extend the file size by 1 page by writing past the end-of-file
 	fseek(stream, 0, SEEK_END);
+	assert(feof(stream));
 	unsigned char array[heapfile->page_size] = { 0x0 };
 	size_t size = fwrite(array, heapfile->page_size, 1, stream);
+	// making sure that the maximum file size of the filesystem is not exceeded
 	assert(feof(stream));
 	assert(size == heapfile->page_size);
 	if(size != heapfile->page_size)
 		printf("error has occurred");
+
+	//save the offset pointer of the page that was just added
 	fseek(stream, size, SEEK_END);
-	long ptr = ftell(stream);
+	long newpage = ftell(stream);
 	rewind(heapfile->file_ptr);
 	
+	// navigate to the last directory and check if a new page record can be appended to the end or a new directory needs to be created
 	FILE *stream1 = heapfile->file_ptr;
 	unsigned char buffer[heapfile->page_size] = { 0 };
 	long nextdir = 0, currentdir = 0;
-	long *ptr;
+	PageEntry *ptr;
 	do		//navigate to the last directory
 	{
 		currentdir = nextdir;
 		fseek(stream1, nextdir, SEEK_SET);
 		fread(buffer, heapfile->page_size, 1, stream1);
-		ptr = (long *)buffer;
-		nextdir = ptr[0];
+		ptr = (PageEntry *)buffer;
+		nextdir = ptr[0].offset;
 	}
 	while(nextdir > 0);
 	
-	PageEntry *entry = (PageEntry *)((unsigned char *)buffer + sizeof(long));
-	int entryPerPage = (pagesize - sizeof(long))/sizeof(PageEntry);
+	//PageEntry *entry = (PageEntry *)((unsigned char *)buffer + sizeof(long));
+	//int entryPerPage = (pagesize - sizeof(long))/sizeof(PageEntry);
+	PageEntry *entry = (PageEntry *)buffer;
+	int entryPerPage = pagesize/sizeof(PageEntry) - 1;
 	int i;
 	for(i = 0; i < entryPerPage; i++)
 	{
@@ -225,32 +234,48 @@ PageID alloc_page(Heapfile *heapfile)
 	}
 	if(i < entryPerPage)
 	{
+		// can just append a new page entry to the end of the directory (ie. the directory is not full)
 		entry[i].freeslots = pagesize;
-		entry[i].offset = ptr;
+		entry[i].offset = newpage;
 	}
 	else
 	{
+		// the last directory is full and need to create another directory and having that directory point to newly created directory
+
+		//first set the stream1 to the eof in order to create a new directory
 		fseek(stream1, 0, SEEK_END);
-		//PageEntry directoryEntry[heapfile->page_size];
-		PageEntry directoryEntry = (PageEntry *)((unsigned char *)buffer + sizeof(long));
-		directoryEntry[0].offset = ptr;
-		directoryEntry[0].freeslots = pagesize;
-		for(i = 1; i < entryPerPage; i++)
+		//PageEntry directoryEntry[entryPerPage];
+		//PageEntry *directoryEntry = (PageEntry *)((unsigned char *)buffer + sizeof(long));
+		PageEntry *directoryEntry = (PageEntry *)buffer;
+		
+		// initialize the directory pointer to -1 as this will be the last directory
+		directoryEntry[0].offset = -1;
+		directoryEntry[0].freeslots = 0;
+		
+		directoryEntry[1].offset = newpage;
+		directoryEntry[1].freeslots = pagesize;
+		for(i = 2; i < entryPerPage; i++)
 		{
+			// initialize all remaining page pointers to -1
 			directoryEntry[i].offset = -1;
 		}
+		/*
 		//unsigned char *newpage[heapfile->page_size];
 		long tailPointer = -1;
 		fwrite(&tailPointer, sizeof(long), 1, stream1);
 		fwrite(directoryEntry, heapfile->page_size - sizeof(long), 1, stream1);
+		*/
+
+		fwrite(buffer, heapfile->page_size, 1, stream1);
+		assert(feof(stream1));
 		fseek(stream1, heapfile->page_size, SEEK_END);
-		long newpage = ftell(stream1);		//save the newpage's offset
+		long newdir = ftell(stream1);		//save the newpage's offset
 		
-		// now update the pointer of the previous directory to point to the last directory
+		// now update the pointer of the previous directory to point to the newly created last directory
 		fseek(stream1, currentdir, SEEK_SET);
 		fread(buffer, heapfile->page_size, 1, stream1);
-		ptr = (long *)buffer;
-		ptr[0] = newpage;
+		ptr = (PageEntry *)buffer;
+		ptr[0].offset = newdir;
 		fseek(stream1, currentdir, SEEK_SET);
 		fwrite(buffer, heapfile->page_size, 1, stream1);
 	}
@@ -264,33 +289,84 @@ void read_page(Heapfile *heapfile, PageID pid, Page *page)
 	FILE *stream = heapfile->file_ptr;
 	//if(page == NULL)
 	//	page = (Page *)malloc(sizeof(Page));
-	long offset = (long)pid * heapfile->page_size;
-	fseek(stream, offset, SEEK_SET);
+	PageEntry entry = { -1, 0};
+	readHeapfileDirectory(heapfile, pid, &entry);		//(long)pid * heapfile->page_size;
+	fseek(stream, entry.offset, SEEK_SET);
 	fread(page->data, page->page_size, 1, stream);
 	rewind(heapfile->file_ptr);
 }
 
-void readHeapfileDirectory(Heapfile *heapfile, PageID id, PageEntry *entry)
+void readHeapfileDirectory(Heapfile *heapfile, PageID pid, PageEntry *entry)
 {
 	FILE *stream = heapfile->file_ptr;
 	int pagesize = heapfile->page_size
 	unsigned char *buffer[pagesize];
-	long *ptr;
+	//long *ptr;
+	long nextdir;
+	PageEntry *ptr;
 	PageID index = pid;
-	entryPerPage = (pagesize - sizeof(long))/sizeof(PageEntry);
-	while(entryPerPage < index)
+	entryPerPage = pagesize/sizeof(PageEntry) - 1;	//(pagesize - sizeof(long))/sizeof(PageEntry);
+	while(entryPerPage <= index)
 	{
-		fread(buffer, heapfile->page_size, 1, stream);
-		ptr = (long *)buffer;
-		nextdir = ptr[0];
+		fread(buffer, pagesize, 1, stream);
+		ptr = (PageEntry *)buffer;
+		nextdir = ptr[0].offset;
 		fseek(stream, nextdir, SEEK_SET);
 		index -= entryPerPage;
 	}
 	fread(buffer, 1, heapfile->page_size, stream);
-	
-	buffer = (PageEntry)buffer;
-	page = 
+	entry->offset = (((PageEntry *)buffer)[1 + index]).offset;
+	entry->freeslots = (((PageEntry *)buffer)[1 + index]).freeslots;
+	rewind(heapfile->file_ptr);
 }
+
+// Write a page from memory to disk.
+void write_page(Page *page, Heapfile *heapfile, PageID pid)
+{
+	assert(heapfile->page_size == page->page_size);
+	FILE *stream = heapfile->file_ptr;
+	PageEntry entry = {-1, 0};
+	readHeapfileDirectory(heapfile, pid, &entry);
+	long offset = pid * heapfile->page_size; 	//entry.offset;
+	fseek(stream, offset, SEEK_SET);
+	
+	fwrite(page->data, page->page_size, 1, stream);
+	rewind(heapfile->file_ptr);
+}
+
+RecordIterator::RecordIterator(Heapfile *heapfile)
+{
+	int pagesize = heapfile->page_size;
+	this->file = heapfile;
+	this->stream = heapfile->file_ptr;
+	rewind(this->stream);
+	unsigned char buffer[pagesize];
+	fread(buffer, pagesize, 1, this->stream);
+	PageEntry *iter = (PageEntry *)buffer;
+	this->current = buffer[1].offset;
+	this->currdir = 0;
+}
+Record RecordIterator::next()
+{
+	file = heapfile;
+}
+bool RecordIterator::hasNext()
+{
+	int pagesize = heapfile->page_size;
+	unsigned char buffer[heapfile->page_size];
+	fseek(stream, this->currdir, SEEK_SET);
+	fread(buffer, pagesize, 1, stream);
+	PageEntry *entry = (PageEntry *)buffer;
+	long nextdir;
+	if((nextdir = entry[0].offset) < 0)
+		return false;
+	
+}
+
+
+
+
+
 /*
 void writeHeapfileDirectory(Heapfile *heapfile, PageID pid, unsigned char isAllocate)
 {
@@ -351,20 +427,3 @@ void writeHeapfileDirectory(Heapfile *heapfile, PageID pid, unsigned char isAllo
 	}
 }
 */
-// Write a page from memory to disk.
-void write_page(Page *page, Heapfile *heapfile, PageID pid)
-{
-	assert(heapfile->page_size == page->page_size);
-	//FILE *stream = heapfile->file_ptr;
-	//PageEntry entry = PageEntry(0, 0);
-	//readHeapfileDirectory(heapfile, );
-	long offset = pid * heapfile->page_size; 	//entry.offset;
-	fseek(stream, offset, SEEK_SET);
-	
-	fwrite(page->data, page->page_size, 1, stream);
-}
-
-RecordIterator::RecordIterator(Heapfile *heapfile)
-{
-	
-}

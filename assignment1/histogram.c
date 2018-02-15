@@ -3,9 +3,10 @@
 #include <stdio.h>
 #include <sys/timeb.h>
 
-int histogram_length = 26;
+#define histogram_length 26
 
-int get_position_in_alphabet(char c) {
+int get_position_in_alphabet(char c) 
+{
     return c - 'A';
 }
 /*
