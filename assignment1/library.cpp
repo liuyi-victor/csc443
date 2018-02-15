@@ -169,7 +169,16 @@ void init_heapfile(Heapfile *heapfile, int page_size, FILE *file)
 	heapfile->page_size = page_size;
 	heapfile->file_ptr = file;
 	unsigned char *buffer[page_size] = { 0 };
-	fwrite(buffer, page_size, 1, file);
+	long pointer = -1;
+	fwrite(&pointer, sizeof(long), 1, file);
+	PageEntry directoryEntry = (PageEntry *)buffer;
+	directoryEntry[0].offset = ptr;
+	directoryEntry[0].freeslots = pagesize;
+	for(i = 1; i < entryPerPage; i++)
+	{
+		directoryEntry[i].offset = -1;
+	}
+	//fwrite(buffer, page_size, 1, file);
 	rewind(heapfile->file_ptr);
 }
 
@@ -194,17 +203,18 @@ PageID alloc_page(Heapfile *heapfile)
 	
 	FILE *stream1 = heapfile->file_ptr;
 	unsigned char buffer[heapfile->page_size] = { 0 };
-	long nextdir;
+	long nextdir = 0, currentdir = 0;
 	long *ptr;
 	do		//navigate to the last directory
 	{
+		currentdir = nextdir;
 		fseek(stream1, nextdir, SEEK_SET);
 		fread(buffer, heapfile->page_size, 1, stream1);
 		ptr = (long *)buffer;
 		nextdir = ptr[0];
 	}
 	while(nextdir > 0);
-	fseek(stream1, heapfile->page_size, SEEK_CUR);
+	
 	PageEntry *entry = (PageEntry *)((unsigned char *)buffer + sizeof(long));
 	int entryPerPage = (pagesize - sizeof(long))/sizeof(PageEntry);
 	int i;
@@ -220,20 +230,29 @@ PageID alloc_page(Heapfile *heapfile)
 	}
 	else
 	{
-		PageEntry directoryEntry[entryPerPage];
+		fseek(stream1, 0, SEEK_END);
+		//PageEntry directoryEntry[heapfile->page_size];
+		PageEntry directoryEntry = (PageEntry *)((unsigned char *)buffer + sizeof(long));
 		directoryEntry[0].offset = ptr;
 		directoryEntry[0].freeslots = pagesize;
 		for(i = 1; i < entryPerPage; i++)
 		{
 			directoryEntry[i].offset = -1;
 		}
-		unsigned char *newpage[heapfile->page_size];
+		//unsigned char *newpage[heapfile->page_size];
 		long tailPointer = -1;
-		memcpy(newpage, &tailPointer, sizeof(long));
-		fwrite(&tailPointer, sizeof(long), 1, stream);
-		fwrite(directoryEntry, sizeof(PageEntry), entryPerPage, stream);
-		fseek(stream, size, SEEK_END);
-		long ptr = ftell(stream);
+		fwrite(&tailPointer, sizeof(long), 1, stream1);
+		fwrite(directoryEntry, heapfile->page_size - sizeof(long), 1, stream1);
+		fseek(stream1, heapfile->page_size, SEEK_END);
+		long newpage = ftell(stream1);		//save the newpage's offset
+		
+		// now update the pointer of the previous directory to point to the last directory
+		fseek(stream1, currentdir, SEEK_SET);
+		fread(buffer, heapfile->page_size, 1, stream1);
+		ptr = (long *)buffer;
+		ptr[0] = newpage;
+		fseek(stream1, currentdir, SEEK_SET);
+		fwrite(buffer, heapfile->page_size, 1, stream1);
 	}
 	rewind(heapfile->file_ptr);
 }
@@ -341,6 +360,7 @@ void write_page(Page *page, Heapfile *heapfile, PageID pid)
 	//readHeapfileDirectory(heapfile, );
 	long offset = pid * heapfile->page_size; 	//entry.offset;
 	fseek(stream, offset, SEEK_SET);
+	
 	fwrite(page->data, page->page_size, 1, stream);
 }
 
