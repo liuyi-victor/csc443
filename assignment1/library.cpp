@@ -305,7 +305,7 @@ void readHeapfileDirectory(Heapfile *heapfile, PageID pid, PageEntry *entry)
 	long nextdir;
 	PageEntry *ptr;
 	PageID index = pid;
-	entryPerPage = pagesize/sizeof(PageEntry) - 1;	//(pagesize - sizeof(long))/sizeof(PageEntry);
+	int entryPerPage = pagesize/sizeof(PageEntry) - 1;	//(pagesize - sizeof(long))/sizeof(PageEntry);
 	while(entryPerPage <= index)
 	{
 		fread(buffer, pagesize, 1, stream);
@@ -348,7 +348,10 @@ RecordIterator::RecordIterator(Heapfile *heapfile)
 }
 Record RecordIterator::next()
 {
-	file = heapfile;
+	if(!this->hasNext())
+		return NULL;
+	int entryPerPage = (this->heapfile).page_size/sizeof(PageEntry) - 1;
+	
 }
 bool RecordIterator::hasNext()
 {
@@ -358,9 +361,20 @@ bool RecordIterator::hasNext()
 	fread(buffer, pagesize, 1, stream);
 	PageEntry *entry = (PageEntry *)buffer;
 	long nextdir;
-	if((nextdir = entry[0].offset) < 0)
+	if((nextdir = entry[0].offset) > 0)
 		return false;
-	
+	int i, entryPerPage = (this->heapfile).page_size/sizeof(PageEntry) - 1;
+	for(i = 1; i < entryPerPage; i++)
+	{
+		if(entry[i].offset == current)
+			break;
+	}
+	if(i < entryPerPage)
+		return false;
+	else
+		return true;
+	//fseek(stream, this->current, SEEK_SET);
+	//fread(buffer, pagesize, 1, stream);
 }
 
 
