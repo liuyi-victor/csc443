@@ -40,8 +40,10 @@ typedef struct {
 class RecordIterator {
 	Heapfile *file;
 	FILE *stream;
-	long current;
+	long index;
 	long currdir;
+	int slot;
+	Page *page;
     public:
         RecordIterator(Heapfile *heapfile);
         Record next();

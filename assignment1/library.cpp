@@ -43,10 +43,11 @@ void fixed_len_read(void *buf, int size, Record *record)
 {
 	int i;
 	char *iter = (char *)buf;
-	char buffer[lengthAttribute] = { 0 };
+	//char buffer[lengthAttribute] = { 0 };
 	//for(i = 0; i < record->size() && size > 0; i++)
 	while(size > 0)
 	{
+		char *buffer = (char *)malloc(lengthAttribute);
 		if(size >= lengthAttribute)
 		{
 			strncpy(buffer, iter, lengthAttribute);
@@ -81,7 +82,8 @@ void init_fixed_len_page(Page *page, int page_size, int slot_size)
 	int capacity = fixed_len_page_capacity(page);
 	//page->bitmapLength = 1 + ((capacity-1) / BYTE_SIZE);
 	int bitmapLength = ceil(capacity/BYTE_SIZE);	// round up (capacity / BYTE_SIZE)
-	memset(page->data, capacity, sizeof(int));
+	//memset(page->data, capacity, sizeof(int));
+	((int *)page->data)[0] = capacity;
 	memset(((unsigned char *)page->data + sizeof(int)), '\0', bitmapLength);	//page->bitmapLength);
 }
 
@@ -153,7 +155,7 @@ int add_fixed_len_page(Page *page, Record *r)
 void write_fixed_len_page(Page *page, int slot, Record *r)
 {
 	int j;
-	int tuple_size = fixed_len_sizeof(r);
+	int tuple_size = page->slot_size;	//fixed_len_sizeof(r);
 	int capacity = fixed_len_page_capacity(page);
 	int bitmapLength = ceil(capacity/BYTE_SIZE);
 	//get the pointer to the memory that directly points to slot for the tuple
@@ -167,17 +169,23 @@ void write_fixed_len_page(Page *page, int slot, Record *r)
 
 void read_fixed_len_page(Page *page, int slot, Record *r)
 {
-	//if(r == NULL)
-	//	r = std::vector<V>();
 	int j;
-	int tuple_size = fixed_len_sizeof(r);
+	int tuple_size = page->slot_size;
 	int capacity = fixed_len_page_capacity(page);
 	int bitmapLength = ceil(capacity/BYTE_SIZE);
+	unsigned char bitmap[bitmapLength] = { 0 };
+	int index = slot/BYTE_SIZE;
+	memcpy(bitmap, ((unsigned char *)page->data + sizeof(int)), bitmapLength);
+	int index2 = slot%BYTE_SIZE;
+	uint8_t byte = bitmap[index];
+	if((byte>>index2)&0x1 == 0x0)
+		return;
 	//get the pointer to the memory that directly points to slot for the tuple
 	unsigned char *tuple = (unsigned char *)page->data + sizeof(int) + bitmapLength + slot * tuple_size;
-	char *buffer = (char*)malloc(lengthAttribute);
+	//char buffer[lengthAttribute]= { 0 };
 	for(j = 0; j < numAttribute; j++)
 	{
+		char *buffer = (char *)malloc(lengthAttribute);
 		memcpy(buffer, tuple, lengthAttribute);
 		r->push_back(buffer);
 		tuple = tuple + lengthAttribute;
@@ -375,32 +383,45 @@ RecordIterator::RecordIterator(Heapfile *heapfile)	//completed
 	fread(buffer, pagesize, 1, this->stream);
 	PageEntry *iter = (PageEntry *)buffer;
 	//this->current = iter[1].offset;
-	this->current = 0;
+	this->index = 0;
 	this->currdir = 0;
 }
 Record RecordIterator::next()	//incomplete
 {
 	Record record;
+
+
+	return record;
+
+	/*	
+	read_fixed_len_page(this->page, this->slot, &record);
 	if(!this->hasNext())
 		return record;
 	record = new Record();
 	int entryPerPage = (this->file)->page_size/sizeof(PageEntry) - 1;
-	
+	int pagesize = (this->file)->page_size;
+	//read the current directory page and get pointer to the current record
+	unsigned char buffer[pagesize];
+	fseek(stream, this->currdir, SEEK_SET);
+	fread(buffer, pagesize, 1, stream);*/
 }
 bool RecordIterator::hasNext()	//completed
 {
 	int entryPerPage = (this->file)->page_size/sizeof(PageEntry) - 1;
-	if(this->current < )
+	if(this->index < entryPerPage)
+		return true;
 	int pagesize = (this->file)->page_size;
-	unsigned char buffer[(this->file)->page_size];
+	unsigned char buffer[pagesize];
 	fseek(stream, this->currdir, SEEK_SET);
 	fread(buffer, pagesize, 1, stream);
 	PageEntry *entry = (PageEntry *)buffer;
 	long nextdir;
-
+	rewind(this->stream);
 	//if the iterator is not even at the last directory, then must not be the last record
 	if((nextdir = entry[0].offset) > 0)
 		return true;
+	else
+		return false;
 
 	
 	/*

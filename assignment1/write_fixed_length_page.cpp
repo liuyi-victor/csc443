@@ -1,39 +1,46 @@
 #include "library.h"
 //#include "csvhelper.h"
 #include <sys/timeb.h>
+#include <assert.h>
 
-void read_records(char *csvfile, std::vector<Record*> table)
+//g++ -g write_fixed_length_page.cpp library.cpp -o write
+
+int read_records(char *csvfile, std::vector<Record> *table)
 {
 	FILE* file = fopen(csvfile, "r");
-	if (!csvfile)
+	if (file == NULL)
 	{
 		return -1;
 	}
+	//string delimiter = ",";
+	rewind(file);
+	int count = 0;
+
+	Record tuple;// = new Record();
+	char field[lengthAttribute];
 	while(!feof(file))
 	{
-		// initialize new record.
-		Record* tuple = new Record();
-		int i = 0;
-
-		//Read all attributes into record.
+		//fread(field, 1100, 1, file)
+		
+		int i;
 		for(i = 0; i < numAttribute; i++)
 		{
-			char* attribute = (char*)malloc(attribute_len);
-			if(fread(attribute, attribute_len, 1, file) == 0)
+			//read a tuple in the table
+			if(fread(field, lengthAttribute, 1, file) == 0)
 				break;
 
-			//Skip comma and newline
-			fgetc(csvfile);
-			record->push_back(attribute);
+			//skip comma and newline
+			fgetc(file);
+			tuple.push_back(field);
 		}
 
-		//If we read the correct number of attributes, add record to records list.
-		if(i == num_attributes)
-		{
-		    records->push_back(record);
-		}
+		table->push_back(tuple);
+		tuple.clear();
+		count++;
+		//if (count == 1000)
+			//put("adsd");
 	}
-	return 0;
+	return count;
 }
 /**
  * Takes a csv file, reads all the values into records.
@@ -51,18 +58,63 @@ int main(int argc, char** argv)
 
 	//Open page file.
 	FILE* stream = fopen(argv[2], "w+");	//"w+b");
-	if(stream = NULL)
+	if(stream == NULL)
 	{
 		//printf("Failed to open page file %s: %s\n", argv[2], strerror(errno));
-		perror("Failed to open page file %s: ", argv[2]);
+		perror("Failed to open page file: ");
 		return 2;
 	}
 
 	int page_size = atoi(argv[3]);
 
 	//Get records
-	std::vector<Record*> records;	//this is basically a table in memory
-	read_records(argv[1], &records);
+	std::vector<Record> table;	//this is basically a table in memory
+	//int count = read_records(argv[1], &table);
+	
+	
+	
+	
+	
+	FILE* file = fopen(argv[1], "r");
+	if (file == NULL)
+	{
+		return -1;
+	}
+	//string delimiter = ",";
+	rewind(file);
+	int count = 0;
+
+	//Record tuple;// = new Record();
+	//char field[lengthAttribute];
+	while(!feof(file))
+	{
+		//fread(field, 1100, 1, file)
+		Record tuple;
+		int i;
+		for(i = 0; i < numAttribute; i++)
+		{
+			//read a tuple in the table
+			char *field = (char *)malloc(lengthAttribute);
+			if(fread(field, lengthAttribute, 1, file) == 0)
+				break;
+
+			//skip comma and newline
+			fgetc(file);
+			tuple.push_back(field);
+		}
+
+		table.push_back(tuple);
+		//tuple.clear();
+		count++;
+		//if (count == 1000)
+			//put("adsd");
+	}
+	
+	
+	
+	
+	
+	assert(table.size() == count);
 
 	//record the time that the insertion started
 	struct timeb t;
@@ -71,13 +123,13 @@ int main(int argc, char** argv)
 
 	//Create the page
 	Page *page = (Page *)malloc(sizeof(Page));;
-	init_fixed_len_page(page, page_size, record_size);
+	init_fixed_len_page(page, page_size, numAttribute*lengthAttribute);
 	int pagecount = 1;
 
 	//Add records to pages
-	for(int i = 0; i < records.size(); i++)
+	for(int i = 0; i < table.size(); i++)
 	{
-		if(add_fixed_len_page(page, records.at(i)) == -1)
+		if(add_fixed_len_page(page, &table.at(i)) == -1)
 		{
 			//The page is full, write page to file.
 			fwrite(page->data, page->page_size, 1, stream);
@@ -85,9 +137,9 @@ int main(int argc, char** argv)
 
 			//Create new page.
 			//free_fixed_len_page(page);
-			init_fixed_len_page(page, page_size, record_size);
+			init_fixed_len_page(page, page_size, numAttribute*lengthAttribute);
 			// rewrite the record to the newly initialize page
-			add_fixed_len_page(page, records.at(i));
+			add_fixed_len_page(page, &table.at(i));
 			pagecount++;
 		}
 	}
@@ -106,7 +158,7 @@ int main(int argc, char** argv)
 	long end_time = t.time * 1000 + t.millitm;
 
 	//Print metrics.
-	printf("NUMBER OF RECORDS: %lu\n", records.size());
+	printf("NUMBER OF RECORDS: %lu\n", table.size());
 	printf("NUMBER OF PAGES: %i\n", pagecount);
 	printf("TIME: %lu milliseconds\n", end_time - start_time);
 }
