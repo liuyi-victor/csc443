@@ -26,86 +26,93 @@ int get_histogram(FILE *file_ptr,
                   long *total_bytes_read) 
 {
 
-    char *buffer = malloc(block_size * sizeof(char));
+	//char *buffer = (char *)malloc(block_size);
+	char buffer[block_size] = { 0 };
+	//initialize histogram values to zero
+	int i;
+	/*
+	for (i = 0; i < histogram_length; i++) 
+		hist[j] = 0;
+	*/
+	//initialize the time recording to zero
+	*miliseconds = 0;
+	*total_bytes_read = 0;
 
-    // set initial values
-    int j;
-    for (j = 0; j < histogram_length; j++) {
-        hist[j] = 0;
-    }
-    *miliseconds = 0;
-    *total_bytes_read = 0;
+	fseek(file_ptr, 0, SEEK_END);
+	long file_size = ftell(file_ptr);
+	fseek(file_ptr, 0, SEEK_SET);
 
-    fseek(file_ptr, 0, SEEK_END);
-    long file_size = ftell(file_ptr);
-    fseek(file_ptr, 0, SEEK_SET);
+	long start_time_in_ms;
+	long time_diff;
+	struct timeb t;
 
-    long start_time_in_ms;
-    long time_diff;
-    struct timeb t;
+	size_t chunk_read;
 
-    size_t chunk_read;
+	while(*total_bytes_read < file_size) 
+	{
+		bzero(buffer, block_size * sizeof(char));
 
-    while(*total_bytes_read < file_size) {
-        bzero(buffer, block_size * sizeof(char));
+		ftime(&t);
+		start_time_in_ms = t.time * 1000 + t.millitm;
 
-        ftime(&t);
-        start_time_in_ms = t.time * 1000 + t.millitm;
+		chunk_read = fread(buffer, sizeof(char), block_size, file_ptr);
 
-        chunk_read = fread(buffer, sizeof(char), block_size, file_ptr);
+		ftime(&t);
+		time_diff = t.time * 1000 + t.millitm - start_time_in_ms;
+		*miliseconds += time_diff;
 
-        ftime(&t);
-        time_diff = t.time * 1000 + t.millitm - start_time_in_ms;
-        *miliseconds += time_diff;
+		int i;
+		for (i = 0; i < chunk_read; i++) 
+		{
+			char c = buffer[i];
+			hist[get_position_in_alphabet(c)]++;
+		}
 
-        int i;
-        for (i = 0; i < chunk_read; i++) {
-            char c = buffer[i];
-            hist[get_position_in_alphabet(c)]++;
-        }
+		*total_bytes_read += chunk_read;
+	}
 
-        *total_bytes_read += chunk_read;
-    }
-
-    return 0;
+	return 0;
 }
 
-int main(int argc, char* argv[]) {
-    int print_histogram = 1;
-    if (argc == 4 && strcmp(argv[3], "--no-histogram") == 0) {
-        print_histogram = 0;
-    } else if (argc != 3) {
-        printf("Invalid amount of arguments, please input the format:\n");
-        printf("./get_histogram <filename> <block_size>\n");
-        exit(1);
-    }
+int main(int argc, char* argv[]) 
+{
+	int print_histogram = 1;
+	if (argc == 4 && strcmp(argv[3], "--no-histogram") == 0) {
+		print_histogram = 0;
+	} 
+	else if (argc != 3) {
+		printf("Invalid amount of arguments, please input the format:\n");
+		printf("./get_histogram <filename> <block_size>\n");
+		exit(1);
+	}
 
-    char* file_name = argv[1];
+	char* file_name = argv[1];
 
-    char *other = NULL;
+	char *other = NULL;
 
-    long block_size = strtol(argv[2], &other, 10);
-    if (*other) {
-        printf("Invalid block size.\n");
-        exit(1);
-    }
+	long block_size = strtol(argv[2], &other, 10);
+	if (*other) {
+		printf("Invalid block size.\n");
+		exit(1);
+	}
 
-    FILE *fp = fopen(file_name, "r");
-    long hist[histogram_length];
-    long miliseconds;
-    long filelen;
+	FILE *fp = fopen(file_name, "r");
+	long hist[histogram_length];
+	long miliseconds;
+	long filelen;
 
-    get_histogram(fp, hist, block_size, &miliseconds, &filelen);
+	get_histogram(fp, hist, block_size, &miliseconds, &filelen);
 
-    if (print_histogram) {
-        int i;
-        for (i = 0; i < histogram_length; i++) {
-            printf("%c %ld\n", i + 'A', hist[i]);
-        }
-    }
+	if (print_histogram) 
+	{
+		int i;
+		for (i = 0; i < histogram_length; i++) {
+		    printf("%c %ld\n", i + 'A', hist[i]);
+		}
+	}
 
-    printf("BLOCK SIZE: %ld    RATE IN BYTES/S: %ld    TIME IN MS: %ld\n", block_size, filelen / miliseconds / 1000, miliseconds);
+	printf("BLOCK SIZE: %ld    RATE IN BYTES/S: %ld    TIME IN MS: %ld\n", block_size, filelen / miliseconds / 1000, miliseconds);
 
-    fclose(fp);
-    return 0;
+	fclose(fp);
+	return 0;
 }

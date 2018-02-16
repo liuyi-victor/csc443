@@ -21,7 +21,7 @@ void random_array(char *array, long bytes)
  */
 int main(int argc, char* argv[]) 
 {
-	int verbose = 1;
+	//int verbose = 1;
 	if(argc < 4)
 	{
 		printf("Invalid arguments\n");
@@ -33,35 +33,36 @@ int main(int argc, char* argv[])
 
 	long total_bytes = atol(argv[2]);
 
-	long block_size = atol(argv[3])
+	long block_size = atol(argv[3]);
 
-	if (*other || block_size > total_bytes || block_size < 0 || total_bytes < 0) 
+	if (block_size > total_bytes || block_size < 0 || total_bytes < 0) 
 	{
-		printf("Invalid block size.\n");
+		printf("Invalid arguments.\n");
 		exit(-1);
 	}
 
-	char *buffer = (char*)malloc(block_size * sizeof(char));
+	char *buffer = (char*)malloc(block_size);
 
-	FILE *fp = fopen(file_name, "w");
+	FILE *stream = fopen(file_name, "w");
 
 	long execution_time_in_ms = 0;
 	long start_time_in_ms;
 	long time_diff;
 	struct timeb t;
 
-	unsigned num_pages = total_bytes / block_size;
+	int num_pages = total_bytes / block_size;
 	long remaining = total_bytes;
-	unsigned i;
-	for(i = 0; i < pages; i++) 
+	int i;
+	for(i = 0; i < num_pages; i++) 
 	{
 		random_array(buffer, block_size);
 
+		//do not include the time to generate the random array
 		ftime(&t);
 		start_time_in_ms = t.time * 1000 + t.millitm;
 
-		fwrite(buffer, sizeof(char), block_size, fp);
-		fflush(fp);
+		fwrite(buffer, 1, block_size, stream);
+		fflush(stream);
 
 		ftime(&t);
 		time_diff = t.time * 1000 + t.millitm - start_time_in_ms;
@@ -72,28 +73,29 @@ int main(int argc, char* argv[])
 
 	if (remaining > 0) 
 	{
-		random_array(buffer, written_bytes);
+		random_array(buffer, remaining);
 
 		ftime(&t);
 		start_time_in_ms = t.time * 1000 + t.millitm;
 
-		fwrite(buffer, sizeof(char), written_bytes, fp);
-		fflush(fp);
+		fwrite(buffer, 1, remaining, stream);
+		fflush(stream);
 
 		ftime(&t);
 		time_diff = t.time * 1000 + t.millitm - start_time_in_ms;
 		execution_time_in_ms += time_diff;
 	}
 
-	fclose(fp);
-	if (remove_file_after_completion) 
-	{
-		remove(file_name);
-	}
+	fclose(stream);
+	//if (remove_file_after_completion) 
+	//{
+	//	remove(file_name);
+	//}
 
-	if (print_result) 
-	{
+	//if(verbose) 
+	//{
 		printf("BLOCK_SIZE: %ld    RATE IN BYTES/S: %ld    TIME IN MS: %ld\n", block_size, total_bytes / execution_time_in_ms / 1000, execution_time_in_ms);
-	}
+	//}
+	free(buffer);
 	return 0;
 }

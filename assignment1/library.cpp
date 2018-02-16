@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <math.h>
+#include <assert.h>
 
 //record functions
 /*
@@ -12,7 +13,7 @@ int fixed_len_sizeof(Record *record)
 	int i, size = 0;
 	for(i = 0; i < record->size(); i++)
 	{
-		size += 10;	//strlen(record[i]);
+		size += lengthAttribute;	//strlen(record[i]);
 	}
 	return size;
 }
@@ -23,34 +24,42 @@ int fixed_len_sizeof(Record *record)
 void fixed_len_write(Record *record, void *buf)
 {
 	int i;
-	void *iter = buf;
-	if(buf != NULL && sizeof(buf) >= fixed_len_sizeof(record))
+	char *iter = (char *)buf;
+	if(buf != NULL)	// && sizeof(buf) >= fixed_len_sizeof(record))
 	{
 		for(i = 0; i < record->size(); i++)
 		{
-			memcpy(iter, record[i], 10);	//strcat(buf, *it);
-			iter += 10;
+			memcpy(iter, record->at(i), lengthAttribute);	//strcat(buf, *it);
+			iter += lengthAttribute;
 		}
 	}	
 }
 
+/*
+ * Deserialize 'size' bytes from the 'buf' buffer, and
+ * stores the record in 'record'
+ */
 void fixed_len_read(void *buf, int size, Record *record)
 {
 	int i;
-	void *iter = buf;
-	for(i = 0; i < record->size() && size > 0; i++)
+	char *iter = (char *)buf;
+	char buffer[lengthAttribute] = { 0 };
+	//for(i = 0; i < record->size() && size > 0; i++)
+	while(size > 0)
 	{
-		if(size >= 10)
+		if(size >= lengthAttribute)
 		{
-			strncpy(record[i], iter, 10);
-			iter += 10;
-			size -= 10;
+			strncpy(buffer, iter, lengthAttribute);
+			record->push_back(buffer);
+			iter += lengthAttribute;
+			size -= lengthAttribute;
 		}
 		else
 		{
-			strncpy(record[i], iter, size);
+			strncpy(buffer, iter, size);
+			record->push_back(buffer);
 			iter += size;
-			//size = 0 
+			size = 0;
 		}
 	}
 }
@@ -151,7 +160,7 @@ void write_fixed_len_page(Page *page, int slot, Record *r)
 	unsigned char *tuple = (unsigned char *)page->data + sizeof(int) + bitmapLength + slot * tuple_size;
 	for(j = 0; j < r->size(); j++)
 	{
-		memcpy(tuple, r.at(j), lengthAttribute);
+		memcpy(tuple, r->at(j), lengthAttribute);
 		tuple = tuple + lengthAttribute;
 	}
 }
@@ -197,6 +206,7 @@ void init_heapfile(Heapfile *heapfile, int page_size, FILE *file)
 		directoryEntry[i].offset = -1;
 	}
 	fwrite(buffer, page_size, 1, heapfile->file_ptr);
+	fflush(heapfile->file_ptr);
 	rewind(heapfile->file_ptr);
 }
 
@@ -213,6 +223,7 @@ PageID alloc_page(Heapfile *heapfile)
 	assert(feof(stream));
 	unsigned char array[heapfile->page_size] = { 0x0 };
 	size_t size = fwrite(array, heapfile->page_size, 1, stream);
+	fflush(stream);
 	// making sure that the maximum file size of the filesystem is not exceeded
 	assert(feof(stream));
 	assert(size == heapfile->page_size);
@@ -242,7 +253,7 @@ PageID alloc_page(Heapfile *heapfile)
 	//PageEntry *entry = (PageEntry *)((unsigned char *)buffer + sizeof(long));
 	//int entryPerPage = (pagesize - sizeof(long))/sizeof(PageEntry);
 	PageEntry *entry = (PageEntry *)buffer;
-	int entryPerPage = pagesize/sizeof(PageEntry) - 1;
+	int entryPerPage = heapfile->page_size/sizeof(PageEntry) - 1;
 	int i;
 	for(i = 0; i < entryPerPage; i++)
 	{
@@ -252,7 +263,7 @@ PageID alloc_page(Heapfile *heapfile)
 	if(i < entryPerPage)
 	{
 		// can just append a new page entry to the end of the directory (ie. the directory is not full)
-		entry[i].freeslots = pagesize;
+		entry[i].freeslots = heapfile->page_size;
 		entry[i].offset = newpage;
 	}
 	else
@@ -270,7 +281,7 @@ PageID alloc_page(Heapfile *heapfile)
 		directoryEntry[0].freeslots = 0;
 		
 		directoryEntry[1].offset = newpage;
-		directoryEntry[1].freeslots = pagesize;
+		directoryEntry[1].freeslots = heapfile->page_size;
 		for(i = 2; i < entryPerPage; i++)
 		{
 			// initialize all remaining page pointers to -1
@@ -284,6 +295,7 @@ PageID alloc_page(Heapfile *heapfile)
 		*/
 
 		fwrite(buffer, heapfile->page_size, 1, stream1);
+		fflush(stream1);
 		assert(feof(stream1));
 		fseek(stream1, heapfile->page_size, SEEK_END);
 		long newdir = ftell(stream1);		//save the newpage's offset
@@ -295,6 +307,7 @@ PageID alloc_page(Heapfile *heapfile)
 		ptr[0].offset = newdir;
 		fseek(stream1, currentdir, SEEK_SET);
 		fwrite(buffer, heapfile->page_size, 1, stream1);
+		fflush(stream1);
 	}
 	rewind(heapfile->file_ptr);
 }
@@ -316,7 +329,7 @@ void read_page(Heapfile *heapfile, PageID pid, Page *page)
 void readHeapfileDirectory(Heapfile *heapfile, PageID pid, PageEntry *entry)
 {
 	FILE *stream = heapfile->file_ptr;
-	int pagesize = heapfile->page_size
+	int pagesize = heapfile->page_size;
 	unsigned char *buffer[pagesize];
 	//long *ptr;
 	long nextdir;
@@ -348,10 +361,11 @@ void write_page(Page *page, Heapfile *heapfile, PageID pid)
 	fseek(stream, offset, SEEK_SET);
 	
 	fwrite(page->data, page->page_size, 1, stream);
+	fflush(stream);
 	rewind(heapfile->file_ptr);
 }
 
-RecordIterator::RecordIterator(Heapfile *heapfile)
+RecordIterator::RecordIterator(Heapfile *heapfile)	//completed
 {
 	int pagesize = heapfile->page_size;
 	this->file = heapfile;
@@ -360,27 +374,37 @@ RecordIterator::RecordIterator(Heapfile *heapfile)
 	unsigned char buffer[pagesize];
 	fread(buffer, pagesize, 1, this->stream);
 	PageEntry *iter = (PageEntry *)buffer;
-	this->current = iter[1].offset;
+	//this->current = iter[1].offset;
+	this->current = 0;
 	this->currdir = 0;
 }
-Record RecordIterator::next()
+Record RecordIterator::next()	//incomplete
 {
+	Record record;
 	if(!this->hasNext())
-		return NULL;
-	int entryPerPage = (this->file).page_size/sizeof(PageEntry) - 1;
+		return record;
+	record = new Record();
+	int entryPerPage = (this->file)->page_size/sizeof(PageEntry) - 1;
 	
 }
-bool RecordIterator::hasNext()
+bool RecordIterator::hasNext()	//completed
 {
-	int pagesize = this->file->page_size;
-	unsigned char buffer[heapfile->page_size];
+	int entryPerPage = (this->file)->page_size/sizeof(PageEntry) - 1;
+	if(this->current < )
+	int pagesize = (this->file)->page_size;
+	unsigned char buffer[(this->file)->page_size];
 	fseek(stream, this->currdir, SEEK_SET);
 	fread(buffer, pagesize, 1, stream);
 	PageEntry *entry = (PageEntry *)buffer;
 	long nextdir;
+
+	//if the iterator is not even at the last directory, then must not be the last record
 	if((nextdir = entry[0].offset) > 0)
-		return false;
-	int i, entryPerPage = (this->file).page_size/sizeof(PageEntry) - 1;
+		return true;
+
+	
+	/*
+	int i, entryPerPage = (this->file)->page_size/sizeof(PageEntry) - 1;
 	for(i = 1; i < entryPerPage; i++)
 	{
 		if(entry[i].offset == current)
@@ -390,6 +414,7 @@ bool RecordIterator::hasNext()
 		return false;
 	else
 		return true;
+	*/
 	//fseek(stream, this->current, SEEK_SET);
 	//fread(buffer, pagesize, 1, stream);
 }
