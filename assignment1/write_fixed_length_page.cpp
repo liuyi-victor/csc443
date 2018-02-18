@@ -42,6 +42,16 @@ int read_records(char *csvfile, std::vector<Record> *table)
 	}
 	return count;
 }
+void print_record(Record *record)
+{
+	//Iterate all records and print the 10 bytes as characters.
+	for(int i = 0; i < record->size() -1; i++)
+	{
+		printf("%s, ", record->at(i));
+	}
+	//Print the last variable with no trailing comma.
+	printf("%s\n", record->at(record->size()-1));
+}
 /**
  * Takes a csv file, reads all the values into records.
  * The records are all added to pages of size page_size.
@@ -68,7 +78,7 @@ int main(int argc, char** argv)
 	int page_size = atoi(argv[3]);
 
 	//Get records
-	std::vector<Record> table;	//this is basically a table in memory
+	std::vector<Record*> table;	//this is basically a table in memory
 	//int count = read_records(argv[1], &table);
 	
 	
@@ -89,7 +99,7 @@ int main(int argc, char** argv)
 	while(!feof(file))
 	{
 		//fread(field, 1100, 1, file)
-		Record tuple;
+		Record *tuple = new Record();
 		int i;
 		for(i = 0; i < numAttribute; i++)
 		{
@@ -100,16 +110,14 @@ int main(int argc, char** argv)
 
 			//skip comma and newline
 			fgetc(file);
-			tuple.push_back(field);
+			tuple->push_back(field);
 		}
-
+		if(feof(file))
+			break;
 		table.push_back(tuple);
 		//tuple.clear();
 		count++;
-		//if (count == 1000)
-			//put("adsd");
 	}
-	
 	
 	
 	
@@ -124,14 +132,16 @@ int main(int argc, char** argv)
 	//Create the page
 	Page *page = (Page *)malloc(sizeof(Page));;
 	init_fixed_len_page(page, page_size, numAttribute*lengthAttribute);
-	int pagecount = 1;
-
+	int pagecount = 0;
+	//printf("reached here!\n");
 	//Add records to pages
 	for(int i = 0; i < table.size(); i++)
 	{
-		if(add_fixed_len_page(page, &table.at(i)) == -1)
+		print_record(table.at(i));
+		if(add_fixed_len_page(page, table.at(i)) == -1)
 		{
 			//The page is full, write page to file.
+			printf("writing a filled page to file\n");
 			fwrite(page->data, page->page_size, 1, stream);
 			fflush(stream);
 
@@ -139,13 +149,14 @@ int main(int argc, char** argv)
 			//free_fixed_len_page(page);
 			init_fixed_len_page(page, page_size, numAttribute*lengthAttribute);
 			// rewrite the record to the newly initialize page
-			add_fixed_len_page(page, &table.at(i));
+			add_fixed_len_page(page, table.at(i));
 			pagecount++;
 		}
 	}
 
 	//write last page to file.
 	fwrite(page->data, page->page_size, 1, stream);
+	pagecount++;
 	fflush(stream);
 	fclose(stream);
 

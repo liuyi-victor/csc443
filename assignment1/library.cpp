@@ -73,15 +73,15 @@ void init_fixed_len_page(Page *page, int page_size, int slot_size)
 	//	page = (Page *)malloc(sizeof(Page));
 	//}
 	if(page->data == NULL)
-		page->data = malloc(sizeof(page_size));
+		page->data = malloc(page_size);
 	else
-		memset(page->data, 0, sizeof(page_size));
+		memset(page->data, 0, page_size);
 	page->page_size = page_size;
 	page->slot_size = slot_size;
 	//page->used_slots = 0;
 	int capacity = fixed_len_page_capacity(page);
 	//page->bitmapLength = 1 + ((capacity-1) / BYTE_SIZE);
-	int bitmapLength = ceil(capacity/BYTE_SIZE);	// round up (capacity / BYTE_SIZE)
+	int bitmapLength = (capacity/BYTE_SIZE) + (capacity%BYTE_SIZE == 0 ? 0 : 1);
 	//memset(page->data, capacity, sizeof(int));
 	((int *)page->data)[0] = capacity;
 	memset(((unsigned char *)page->data + sizeof(int)), '\0', bitmapLength);	//page->bitmapLength);
@@ -100,17 +100,33 @@ int fixed_len_page_capacity(Page *page)
 int fixed_len_page_freeslots(Page *page)
 {
 	//return fixed_len_page_capacity(page) - page->used_slots;
-	int i, count = 0;
+	int i = 0, count = 0;
 	int capacity = fixed_len_page_capacity(page);
-	int bitmapLength = ceil(capacity/BYTE_SIZE);
+	int bitmapLength = (capacity/BYTE_SIZE) + (capacity%BYTE_SIZE == 0 ? 0 : 1);
 	unsigned char bitmap[bitmapLength];
 	memcpy(bitmap, ((unsigned char *)page->data + sizeof(int)), bitmapLength);
-	for(i = 0; i < bitmapLength; i++)
+	int remaining = capacity;
+	//for(i = 0; i < capacity; i++)
+	while(remaining > 0)
 	{
 		uint8_t byte = bitmap[i];
-		count += ((byte & 0x1)+((byte>>1) & 0x1)+((byte>>2) & 0x1)+((byte>>3) & 0x1)+((byte>>4) & 0x1)+((byte>>5) & 0x1)+((byte>>6) & 0x1)+((byte>>7) & 0x1));
+		if(remaining >= BYTE_SIZE)
+			count += ((byte & 0x1)+((byte>>1) & 0x1)+((byte>>2) & 0x1)+((byte>>3) & 0x1)+((byte>>4) & 0x1)+((byte>>5) & 0x1)+((byte>>6) & 0x1)+((byte>>7) & 0x1));
+		else
+		{
+			byte = byte >> (BYTE_SIZE - remaining);
+			do
+			{
+				count += byte & 0x1;
+				byte = byte >> 1;
+				remaining--;
+			}
+			while(remaining > 0);
+		}
+		i++;
+		remaining = remaining - BYTE_SIZE;
 	}
-	return count;
+	return capacity-count;
 }
 
 int add_fixed_len_page(Page *page, Record *r)
@@ -119,25 +135,30 @@ int add_fixed_len_page(Page *page, Record *r)
 		return -1;
 	// get the metadata of the page
 	int capacity = fixed_len_page_capacity(page);
-	int bitmapLength = ceil(capacity/BYTE_SIZE);	// round up (capacity / BYTE_SIZE)
-	unsigned char *bitmap = (unsigned char *)malloc(bitmapLength);
+	int bitmapLength = (capacity/BYTE_SIZE) + (capacity%BYTE_SIZE == 0 ? 0 : 1);
+	//unsigned char *bitmap = (unsigned char *)malloc(bitmapLength);
+	unsigned char bitmap[bitmapLength];
 	memcpy(bitmap, ((unsigned char *)page->data + sizeof(int)), bitmapLength);
 	// find a free slot marked by a bit 0 in the corresponding directory
 	int i, j, slot;
+	uint8_t flag = 0x80;
 	for(i = 0; i < bitmapLength; i++)
 	{
 		if(bitmap[i] != 0xff)
 		{
+			
 			unsigned char value = bitmap[i]; 
-			for(j = 0; j < BYTE_SIZE && value & 0b1 != 0; j++)
-				value = value >> 1;
-			bitmap[i] ^= 0b1 << j;		//toggle the bit
+			for(j = 0; j < BYTE_SIZE && ((value & 0x80) != 0); j++)
+				value = value << 1;
+			bitmap[i] |= (flag >> j);		//toggle the bit
 			slot = BYTE_SIZE * i + j;	//record the slot index of the first free slot
 			break;
 		}
 	}
 	if(i >= bitmapLength)
 		return -1;
+	memcpy(((unsigned char *)page->data + sizeof(int)), bitmap, bitmapLength);		//write back the changed directory
+	//printf("writing a record to page\n");
 	/*
 	int tuple_size = fixed_len_sizeof(r);
 	//get the pointer to the memory that directly points to slot for the tuple
@@ -157,7 +178,7 @@ void write_fixed_len_page(Page *page, int slot, Record *r)
 	int j;
 	int tuple_size = page->slot_size;	//fixed_len_sizeof(r);
 	int capacity = fixed_len_page_capacity(page);
-	int bitmapLength = ceil(capacity/BYTE_SIZE);
+	int bitmapLength = (capacity/BYTE_SIZE) + (capacity%BYTE_SIZE == 0 ? 0 : 1);
 	//get the pointer to the memory that directly points to slot for the tuple
 	unsigned char *tuple = (unsigned char *)page->data + sizeof(int) + bitmapLength + slot * tuple_size;
 	for(j = 0; j < r->size(); j++)
@@ -172,16 +193,25 @@ void read_fixed_len_page(Page *page, int slot, Record *r)
 	int j;
 	int tuple_size = page->slot_size;
 	int capacity = fixed_len_page_capacity(page);
-	int bitmapLength = ceil(capacity/BYTE_SIZE);
+	//int bitmapLength = ceil(capacity/BYTE_SIZE);
+	int bitmapLength = (capacity/BYTE_SIZE) + (capacity%BYTE_SIZE == 0 ? 0 : 1);
+	//check that the specified record at slot has content
 	unsigned char bitmap[bitmapLength] = { 0 };
+	//index is the byte number in the directory
 	int index = slot/BYTE_SIZE;
 	memcpy(bitmap, ((unsigned char *)page->data + sizeof(int)), bitmapLength);
+	//index2 is the bit number in the directory byte
 	int index2 = slot%BYTE_SIZE;
 	uint8_t byte = bitmap[index];
-	if((byte>>index2)&0x1 == 0x0)
-		return;
+	uint8_t flag = 0x80;
+	if(((byte)&(flag>>index2)) == 0)
+	{
+		return;		//the slot is empty (not record)
+	}
+		
 	//get the pointer to the memory that directly points to slot for the tuple
 	unsigned char *tuple = (unsigned char *)page->data + sizeof(int) + bitmapLength + slot * tuple_size;
+	//char *ptr = tuple;
 	//char buffer[lengthAttribute]= { 0 };
 	for(j = 0; j < numAttribute; j++)
 	{
@@ -190,6 +220,7 @@ void read_fixed_len_page(Page *page, int slot, Record *r)
 		r->push_back(buffer);
 		tuple = tuple + lengthAttribute;
 	}
+	//free(tuple);
 }
 
 // Initialize a heapfile to use the file and page size given.

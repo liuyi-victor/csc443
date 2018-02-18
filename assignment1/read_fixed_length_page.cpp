@@ -1,24 +1,32 @@
 #include "library.h"
-#include "csvhelper.h"
+//#include "csvhelper.h"
+#include <assert.h>
 #include <sys/timeb.h>
 
 void print_record(Record* record)
 {
 	//Iterate all records and print the 10 bytes as characters.
-	for(int i = 0; i < record->size()-1; i++)
+	for(int i = 0; i < record->size() -1; i++)
 	{
-		printf("%.10s,", record->at(i));
+		printf("%s, ", record->at(i));
 	}
 	//Print the last variable with no trailing comma.
-	printf("%.10s\n", record->at(record->size()-1));
+	printf("%s\n", record->at(record->size()-1));
 }
-
+void free_record_memory(Record *tuple)
+{
+	int arrity = tuple->size();
+	for(int i=0; i < arrity; i++)
+		free((char *)tuple->at(i));
+	tuple->clear();
+}
 /**
  * Reads page_file that was generated using write_fixed_len_pages.
  * page_size should match the page_size that was used with write_fixed_len_pages.
  * Once a page is loaded, it prints all records in the page to stdout.
  */
-int main(int argc, char** argv){
+int main(int argc, char** argv)
+{
 	if(argc != 3)
 	{
 		printf("Usage: read_fixed_len_page <page_file> <page_size>\n");
@@ -36,7 +44,7 @@ int main(int argc, char** argv){
 	Page* page = (Page *)malloc(sizeof(Page));
 
 	int capacity;
-	Record tuple = new Record();
+	Record tuple;
 	//record the time that program started
 	struct timeb t;
 	ftime(&t);
@@ -52,47 +60,30 @@ int main(int argc, char** argv){
 		capacity = fixed_len_page_capacity(page);
 
 		//if a page could not be read were done.
-		if(fread(page->data, pagesize, 1, page_file) == 0){
+		if(fread(page->data, pagesize, 1, page_file) == 0)
+		{
 			assert(feof(page_file));
 			break;
 		}
 		else
 		{
-			for(int i = 0; i < capacity; i++)
+			//read all records of contained in this page
+			int i;
+			for(i = 0; i < capacity; i++)
 			{
-				read_fixed_len_page(page, i, &record);
-				if(record.size() != 0)
-					print_record(&record);
-				record.clear();
-			}
-			/*
-			unsigned char* directory_offset = ((unsigned char*)page->data) + fixed_len_page_directory_offset(page);
-
-			int record_count = 0;
-
-			//Traverse all records in read page and print them.
-			for(int i = 0; i < fixed_len_page_capacity(page); i++)
-			{
-				
-				if(i > 0 && i%8 == 0){
-					directory_offset += 1;
-				}
-
-				//Retrieve and print record from slot if its marked in the directory.
-				unsigned char directory = (unsigned char)*directory_offset;
-				if(directory >> (i%8) & 0x01)
+				read_fixed_len_page(page, i, &tuple);
+				if(tuple.size() != 0)
 				{
-					Record record;
-					read_fixed_len_page(page, i, &record);
-					printf("Record %d at slot %d: ", record_count, i);
-					print_record(&record);
-					record_count++;
+					printf("record %d is: \n", i);
+					print_record(&tuple);
 				}
+				free_record_memory(&tuple);
+				//record.clear();
 			}
-			*/
 		}
-		free_fixed_len_page(page);
+		init_fixed_len_page(page, pagesize, numAttribute*lengthAttribute);
 	}
+	free(page->data);
 	free(page);
 
 	//Calculate program end time.
