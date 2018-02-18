@@ -1,12 +1,53 @@
 #include "library.h"
-#include "csvhelper.h"
-
+//#include "csvhelper.h"
+#include <assert.h>
 #include <sys/timeb.h>
 #include <stdio.h>
+
+int read_records(char *csvfile, std::vector<Record> *table)
+{
+	FILE* file = fopen(csvfile, "r");
+	if (file == NULL)
+	{
+		return -1;
+	}
+	//string delimiter = ",";
+	rewind(file);
+	int count = 0;
+
+	Record tuple;// = new Record();
+	char field[lengthAttribute];
+	while(!feof(file))
+	{
+		//fread(field, 1100, 1, file)
+		
+		int i;
+		for(i = 0; i < numAttribute; i++)
+		{
+			//read a tuple in the table
+			if(fread(field, lengthAttribute, 1, file) == 0)
+				break;
+
+			//skip comma and newline
+			fgetc(file);
+			tuple.push_back(field);
+		}
+
+		table->push_back(tuple);
+		tuple.clear();
+		count++;
+		//if (count == 1000)
+			//put("adsd");
+	}
+	return count;
+}
 
 /**
  * Takes a csv file and converts it to a heap file with given page sizes.
  */
+ 
+ 
+ //g++ -g csv2heapfile.cpp library.cpp -o heap
 int main(int argc, char** argv)
 {
 	//Make sure all args are provided.
@@ -17,20 +58,73 @@ int main(int argc, char** argv)
 	}
 
 	//load records from csv.
-	std::vector<Record*> records;	//vector of vectors
-	int error = read_records(argv[1], &records);
+	
+	
+	
+	//Get records
+	std::vector<Record*> table;	//this is basically a table in memory
+	//int count = read_records(argv[1], &table);
+	
+	
+	
+	
+	
+	FILE* file = fopen(argv[1], "r");
+	if (file == NULL)
+	{
+		return -1;
+	}
+	//string delimiter = ",";
+	rewind(file);
+	int count = 0;
+
+	//Record tuple;// = new Record();
+	//char field[lengthAttribute];
+	while(!feof(file))
+	{
+		//fread(field, 1100, 1, file)
+		Record *tuple = new Record();
+		int i;
+		for(i = 0; i < numAttribute; i++)
+		{
+			//read a tuple in the table
+			char *field = (char *)malloc(lengthAttribute);
+			if(fread(field, lengthAttribute, 1, file) == 0)
+				break;
+
+			//skip comma and newline
+			fgetc(file);
+			tuple->push_back(field);
+		}
+		if(feof(file))
+			break;
+		table.push_back(tuple);
+		//tuple.clear();
+		count++;
+	}
+	
+	
+	
+	
+	assert(table.size() == count);
+
+	
+	
+	
+	/*
 	if (error) 
 	{
 		fprintf(stderr, "Could not read records from file: %s\n", argv[1]);
 		return 2;
 	}
-
-	if(records.size() == 0)
+*/
+	if(table.size() == 0)
 	{
 		fprintf(stderr, "No records in file: %s\n", argv[1]);
 		return 3;
 	}
-
+	int slotsize = fixed_len_sizeof(table.at(0));
+	int pagesize = atoi(argv[3]);
 	//Record start time of program.
 	//We do not include parsing of the csv because that is irrelevant to our metrics.
 	struct timeb t;
@@ -38,7 +132,7 @@ int main(int argc, char** argv)
 	long start_ms = t.time * 1000 + t.millitm;
 
 	Heapfile* heap = (Heapfile*)malloc(sizeof(Heapfile));
-	//Open heap file where heap is stored.
+	//open heap file where heap is stored.
 	FILE* heap_file = fopen(argv[2], "w+b");
 	if(!heap_file)
 	{
@@ -47,17 +141,31 @@ int main(int argc, char** argv)
 		free(heap);
 		return 4;
 	}
-	init_heapfile(heap, atoi(argv[3]), heap_file);
-	heap->slot_size = record_size;
+	init_heapfile(heap, pagesize, heap_file);
 
-	//Initialize first page + directory
-	PageID page_id = alloc_page(heap);
 	Page* page = (Page*)malloc(sizeof(Page));
-	read_page(heap, page_id, page);
+	//read_page(heap, page_id, page);
+	init_fixed_len_page(page, pagesize, slotsize);
 
-	Page* dir_page = (Page*)malloc(sizeof(Page));
-	read_directory_page(heap, heap_id_of_page(page_id, heap->page_size), dir_page);
-
+	//Page* dir_page = (Page*)malloc(sizeof(Page));
+	//read_directory_page(heap, heap_id_of_page(page_id, heap->page_size), dir_page);
+	int i, result, cardinality = table.size();
+	PageID pid = alloc_page(heap);		//first initialize a data page, PageID 0 is for the directory of the heapfile
+	for(i = 0; i < cardinality; i++)
+	{
+		result = add_fixed_len_page(page, table.at(i));
+		if(result == -1)
+		{
+			//page is full, need to write this page to heapfile and re-initialize page
+			write_page(page, heap, pid);
+			pid = alloc_page(heap);
+			init_fixed_len_page(page, pagesize, slotsize);
+			add_fixed_len_page(page, table.at(i));	//try again to insert into the new page
+		}
+	}
+	//write the final page to heap.
+	//write_page(page, heap, pid);
+	/*
 	//Loop all records and add them to heap.
 	for(int i = 0; i < records.size(); i++)
 	{
@@ -89,7 +197,7 @@ int main(int argc, char** argv)
 
 	//Write our final page to heap.
 	write_page(page, heap, page_id);
-
+*/
 	//Calculate program end time.
 	ftime(&t);
 	long end_ms = t.time * 1000 + t.millitm;

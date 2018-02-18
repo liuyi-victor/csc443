@@ -105,6 +105,9 @@ void read_page(Heapfile *heapfile, PageID pid, Page *page);
 void write_page(Page *page, Heapfile *heapfile, PageID pid);
 
 // fetch a page entry from the directory of the heapfile
-void readHeapfileDirectory(Heapfile *heapfile, PageID id, PageEntry *entry);
+void readHeapfileDirectory(Heapfile *heapfile, PageID pid, PageEntry *entry);
+
+// fetch a page entry from the directory of the heapfile
+void writeHeapfileDirectory(Heapfile *heapfile, PageID pid, PageEntry *entry);
 #endif
 
