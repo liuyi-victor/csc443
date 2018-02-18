@@ -1,5 +1,6 @@
 #include "library.h"
 
+//g++ -g scan.cpp library.cpp -o scan
 int main(int argc, char** argv) 
 {
 	if (argc < 3) 
@@ -8,13 +9,13 @@ int main(int argc, char** argv)
 		return 1;
 	}
 	
-	Heapfile* file = (Heapfile*)malloc(sizeof(Heapfile));
+	Heapfile *file = (Heapfile*)malloc(sizeof(Heapfile));
 	int pagesize = atoi(argv[2]);
-	FILE *stream = fopen(argv[1], "w+");
+	FILE *stream = fopen(argv[1], "r+b");
 	if(stream == NULL)
 	{
-		//printf("Failed to open page file %s: %s\n", argv[2], strerror(errno));
-		perror("Failed to open page file %s: ", argv[2]);
+		fprintf(stderr,"Failed to open page file %s\n", argv[2]);
+		//perror("Failed to open page file %s: ", argv[2]);
 		return 2;
 	}
 	//if (open_heapfile(heap, argv[1], atoi(argv[2]), record_size) != 0) 
@@ -29,7 +30,7 @@ int main(int argc, char** argv)
 		iter->printRecords(&next_record);
 	}
 
-	fclose(heap->file_ptr);
+	fclose(file->file_ptr);
 	free(file);
 	free(iter);
 

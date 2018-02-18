@@ -260,7 +260,7 @@ PageID alloc_page(Heapfile *heapfile)
 
 	// 1. goto the end of the file and extend the file size by 1 page by writing past the end-of-file
 	fseek(stream, 0, SEEK_END);
-	if(!feof(stream1))
+	if(!feof(stream))
 		fgetc(stream);
 	assert(feof(stream));
 	long newpage = ftell(stream);

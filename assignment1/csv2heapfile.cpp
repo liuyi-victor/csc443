@@ -47,7 +47,7 @@ int read_records(char *csvfile, std::vector<Record> *table)
  */
  
  
- //g++ -g csv2heapfile.cpp library.cpp -o heap
+//g++ -g csv2heapfile.cpp library.cpp -o heap
 int main(int argc, char** argv)
 {
 	//Make sure all args are provided.
