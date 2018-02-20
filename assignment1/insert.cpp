@@ -1,8 +1,8 @@
 #include "library.h"
-#include "csvhelper.h"
 #include <stdbool.h>
 #include <stdlib.h>
-
+#include <assert.h>
+/*
 int open_heapfile(Heapfile *heap, char *path, int page_size)//, int slot_size) 
 {
 	FILE* heap_file = fopen(path, "wb");
@@ -18,6 +18,7 @@ int open_heapfile(Heapfile *heap, char *path, int page_size)//, int slot_size)
 	heap->file_ptr = heap_file;
 	return 0;
 }
+*/
 /**
  * Insert records from a csv into an existing heap file.
  */
@@ -31,6 +32,45 @@ int main(int argc, char** argv)
 
 	//Load records from csv.
 	std::vector<Record*> records;
+	FILE* csv = fopen(argv[2], "r");
+	if (csv == NULL)
+	{
+		return -1;
+	}
+	//string delimiter = ",";
+	rewind(csv);
+	int count = 0;
+
+	//Record tuple;// = new Record();
+	//char field[lengthAttribute];
+	while(!feof(csv))
+	{
+		//fread(field, 1100, 1, file)
+		Record *tuple = new Record();
+		int i;
+		for(i = 0; i < numAttribute; i++)
+		{
+			//read a tuple in the table
+			char *field = (char *)malloc(lengthAttribute);
+			if(fread(field, lengthAttribute, 1, csv) == 0)
+				break;
+
+			//skip comma and newline
+			fgetc(csv);
+			tuple->push_back(field);
+		}
+		if(feof(csv))
+			break;
+		records.push_back(tuple);
+		//tuple.clear();
+		count++;
+	}
+	
+	
+	
+	
+	assert(records.size() == count);
+	/*
 	int error = read_records(argv[2], &records);
 	if (error) {
 		fprintf(stderr, "Could not read records from file: %s\n", argv[2]);
@@ -40,15 +80,77 @@ int main(int argc, char** argv)
 		fprintf(stderr, "No records in file: %s\n", argv[2]);
 		return 3;
 	}
-
-	Heapfile* heap = (Heapfile*)malloc(sizeof(Heapfile));
+	*/
 	int pagesize = atoi(argv[3]);
-	int slotsize = numAttribute*lengthAttribute;
-	if (open_heapfile(heap, argv[1], pagesize, record_size) != 0) 
-	{
+	Heapfile* file = (Heapfile*)malloc(sizeof(Heapfile));
+	file->file_ptr = fopen(argv[1], "r+");
+	if(file->file_ptr == NULL)
 		return 4;
+	file->page_size = pagesize;
+	int slotsize = numAttribute*lengthAttribute;
+
+	Page *page = (Page *)malloc(sizeof(Page));
+	page->page_size = pagesize;
+	page->slot_size = slotsize;
+	init_fixed_len_page(page, pagesize, slotsize);
+	int i, result, slots, total = records.size();
+	PageID pid = 1;
+	PageEntry entry = {-1, -1};
+	for(i = 0; i < total; i++)
+	{
+		while((i < total) &&(result = readHeapfileDirectory(file, pid, &entry) > 0))
+		{
+			if(entry.freeslots > 0)
+			{
+				slots = entry.freeslots;
+				init_fixed_len_page(page, pagesize, slotsize);
+				read_page(file, pid, page);
+				while(slots > 0 && i < total)
+				{
+					result = add_fixed_len_page(page, records.at(i));
+					assert(result >= 0);
+					slots = slots - 1;
+					i++;
+				}
+				write_page(page, file, pid);
+			}
+			pid = pid +1;
+		}
+		if(i >= total)
+			break;
+		while(i < total)
+		{
+			pid = alloc_page(file);
+			init_fixed_len_page(page, pagesize, slotsize);
+			result = readHeapfileDirectory(file, pid, &entry);
+			assert(result >= 0);
+			slots = entry.freeslots;
+			read_page(file, pid, page);
+			while(slots > 0 && i < total)
+			{
+				result = add_fixed_len_page(page, records.at(i));
+				assert(result >= 0);
+				slots = slots - 1;
+				i++;
+			}
+			write_page(page, file, pid);
+		}
 	}
-	
+	free(page->data);
+	free(page);
+	fclose(file->file_ptr);
+	free(file);
+
+
+
+
+
+/*
+
+
+
+
+
 	Page* page = (Page*)malloc(sizeof(Page));
 	init_fixed_len_page(page, pagesize, slotsize);
 	
@@ -122,6 +224,6 @@ int main(int argc, char** argv)
 
 	fclose(heap->file_ptr);
 	free(heap);
-
+*/
 	return 0;
 }

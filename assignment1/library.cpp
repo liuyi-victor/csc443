@@ -630,7 +630,7 @@ int RecordIterator::updatenext(Page *page)
 	while((result = readHeapfileDirectory(this->file, tempnewpage, &entry)) >= 0)
 	{
 		//result = readHeapfileDirectory(this->file, this->pid, &entry);
-		if(entry.freeslots > 0 && (entry.freeslots < maxslots))
+		if(entry.freeslots >= 0 && (entry.freeslots < maxslots))
 		{
 			init_fixed_len_page(page, page->page_size, slotsize);
 			read_page(this->file, tempnewpage, page);

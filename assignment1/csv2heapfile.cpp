@@ -143,6 +143,7 @@ int main(int argc, char** argv)
 	init_heapfile(heap, pagesize, heap_file);
 
 	Page* page = (Page*)malloc(sizeof(Page));
+	page->data = NULL;
 	//read_page(heap, page_id, page);
 	init_fixed_len_page(page, pagesize, slotsize);
 
@@ -155,6 +156,7 @@ int main(int argc, char** argv)
 		result = add_fixed_len_page(page, table.at(i));
 		if(result == -1)
 		{
+			//printf("reached here\n");
 			//page is full, need to write this page to heapfile and re-initialize page
 			write_page(page, heap, pid);
 			pid = alloc_page(heap);
