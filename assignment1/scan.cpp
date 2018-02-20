@@ -10,15 +10,22 @@ void print_record(Record* record)
 	//Print the last variable with no trailing comma.
 	printf("%s\n", record->at(record->size()-1));
 }
+void free_record_memory(Record *tuple)
+{
+	int arrity = tuple->size();
+	for(int i=0; i < arrity; i++)
+		free((char *)tuple->at(i));
+	tuple->clear();
+}
+int main(int argc, char** argv)
+{
+	if(argc != 3){
+		fprintf(stderr, "Usage: %s <heap_file> <page_size>\n", argv[0]);
+		return 1;
+	}
 
-int main(int argc, char** argv){
-    if(argc != 3){
-        fprintf(stderr, "Usage: %s <heap_file> <page_size>\n", argv[0]);
-        return 1;
-    }
-
-    Heapfile* heap = (Heapfile*)malloc(sizeof(Heapfile));
-    int pagesize = atoi(argv[2]);
+	Heapfile* heap = (Heapfile*)malloc(sizeof(Heapfile));
+	int pagesize = atoi(argv[2]);
 	FILE *stream = fopen(argv[1], "r+b");
 	if(stream == NULL)
 	{
@@ -29,17 +36,22 @@ int main(int argc, char** argv){
 	heap->file_ptr = stream;
 	heap->page_size = pagesize;
 
-    RecordIterator* recordi = new RecordIterator(heap);
-    while (recordi->hasNext()) {
-        Record next_record = recordi->next();
-        print_record(&next_record);
-    }
+	RecordIterator* recordi = new RecordIterator(heap);
+	int count = 0;
+	while (recordi->hasNext())
+	{
+		Record next_record = recordi->next();
+		printf("Record %d:\n", count);
+		print_record(&next_record);
+		free_record_memory(&next_record);
+		count++;
+	} 
 
-    fclose(heap->file_ptr);
-    free(heap);
-    free(recordi);
+	fclose(heap->file_ptr);
+	free(heap);
+	free(recordi);
 
-    return 0;
+	return 0;
 }
 /*
 //g++ -g scan.cpp library.cpp -o scan

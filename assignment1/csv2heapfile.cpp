@@ -1,5 +1,4 @@
 #include "library.h"
-//#include "csvhelper.h"
 #include <assert.h>
 #include <sys/timeb.h>
 #include <stdio.h>
@@ -164,7 +163,7 @@ int main(int argc, char** argv)
 		}
 	}
 	//write the final page to heap.
-	//write_page(page, heap, pid);
+	write_page(page, heap, pid);
 	/*
 	//Loop all records and add them to heap.
 	for(int i = 0; i < records.size(); i++)
