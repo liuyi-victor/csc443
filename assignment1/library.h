@@ -37,13 +37,17 @@ typedef struct {
 	int slot;
 } RecordID;
 
-class RecordIterator {
+class RecordIterator 
+{
 	Heapfile *file;
-	FILE *stream;
-	long index;
-	long currdir;
+	//FILE *stream;
+	int pid;
+	int currdir;
 	int slot;
-	Page *page;
+	int index;
+	bool end;
+	int updatenext(Page *page);
+	int searchPageNext(Page *page, int start, int capacity);
     public:
         RecordIterator(Heapfile *heapfile);
         Record next();
@@ -51,14 +55,13 @@ class RecordIterator {
 };
 // implement serialization of fixed length records.
 
-/*
- * Compute the number of bytes required to serialize record
- */
+
+// Compute the number of bytes required to serialize record
 int fixed_len_sizeof(Record *record);
 
-/*
- * Serialize the record to a byte array to be stored in buf
- */
+
+// Serialize the record to a byte array to be stored in buf
+
 void fixed_len_write(Record *record, void *buf);
 
 /*
@@ -71,7 +74,7 @@ void fixed_len_read(void *buf, int size, Record *record);
 // Initializes a page using the given slot size
 void init_fixed_len_page(Page *page, int page_size, int slot_size);
 
-// Calculates the maximal number of records that fit in a page
+// Calculates the maximum number of records that fit in a page
 int fixed_len_page_capacity(Page *page);
 
 // Calculate the free space (number of free slots) in the page
@@ -99,15 +102,15 @@ void init_heapfile(Heapfile *heapfile, int page_size, FILE *file);
 PageID alloc_page(Heapfile *heapfile);
 
 // Read a page into memory.
-void read_page(Heapfile *heapfile, PageID pid, Page *page);
+int read_page(Heapfile *heapfile, PageID pid, Page *page);
 
 // Write a page from memory to disk.
 void write_page(Page *page, Heapfile *heapfile, PageID pid);
 
 // fetch a page entry from the directory of the heapfile
-void readHeapfileDirectory(Heapfile *heapfile, PageID pid, PageEntry *entry);
+int readHeapfileDirectory(Heapfile *heapfile, PageID pid, PageEntry *entry);
 
-// fetch a page entry from the directory of the heapfile
+// write a page entry to the directory of the heapfile
 void writeHeapfileDirectory(Heapfile *heapfile, PageID pid, PageEntry *entry);
 #endif
 

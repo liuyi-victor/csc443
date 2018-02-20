@@ -104,7 +104,8 @@ int fixed_len_page_freeslots(Page *page)
 	int i = 0, count = 0;
 	int capacity = fixed_len_page_capacity(page);
 	int bitmapLength = (capacity/BYTE_SIZE) + (capacity%BYTE_SIZE == 0 ? 0 : 1);
-	unsigned char bitmap[bitmapLength];
+	//unsigned char bitmap[bitmapLength];
+	unsigned char *bitmap = (unsigned char *)malloc(bitmapLength);
 	memcpy(bitmap, ((unsigned char *)page->data + sizeof(int)), bitmapLength);
 	int remaining = capacity;
 	//for(i = 0; i < capacity; i++)
@@ -127,6 +128,7 @@ int fixed_len_page_freeslots(Page *page)
 		i++;
 		remaining = remaining - BYTE_SIZE;
 	}
+	free(bitmap);
 	return capacity-count;
 }
 
@@ -137,8 +139,8 @@ int add_fixed_len_page(Page *page, Record *r)
 	// get the metadata of the page
 	int capacity = fixed_len_page_capacity(page);
 	int bitmapLength = (capacity/BYTE_SIZE) + (capacity%BYTE_SIZE == 0 ? 0 : 1);
-	//unsigned char *bitmap = (unsigned char *)malloc(bitmapLength);
-	unsigned char bitmap[bitmapLength];
+	unsigned char *bitmap = (unsigned char *)malloc(bitmapLength);
+	//unsigned char bitmap[bitmapLength];
 	memcpy(bitmap, ((unsigned char *)page->data + sizeof(int)), bitmapLength);
 	// find a free slot marked by a bit 0 in the corresponding directory
 	int i, j, slot;
@@ -157,7 +159,10 @@ int add_fixed_len_page(Page *page, Record *r)
 		}
 	}
 	if(i >= bitmapLength)
+	{
+		free(bitmap);
 		return -1;
+	}
 	memcpy(((unsigned char *)page->data + sizeof(int)), bitmap, bitmapLength);		//write back the changed directory
 	//printf("writing a record to page\n");
 	/*
@@ -171,6 +176,7 @@ int add_fixed_len_page(Page *page, Record *r)
 	}
 	*/
 	write_fixed_len_page(page, slot, r);
+	free(bitmap);
 	return slot;
 }
 
@@ -180,6 +186,26 @@ void write_fixed_len_page(Page *page, int slot, Record *r)
 	int tuple_size = page->slot_size;	//fixed_len_sizeof(r);
 	int capacity = fixed_len_page_capacity(page);
 	int bitmapLength = (capacity/BYTE_SIZE) + (capacity%BYTE_SIZE == 0 ? 0 : 1);
+	if(r == NULL)
+	{
+		//delete
+		// NO NEED: unsigned char bitmap[bitmapLength] = { 0 };
+		//index is the byte number in the directory
+		int index = slot/BYTE_SIZE;
+		unsigned char *bitmap = (unsigned char *)page->data + sizeof(int);
+		//index2 is the bit number in the directory byte
+		int index2 = slot%BYTE_SIZE;
+		//uint8_t byte = bitmap[index];
+		uint8_t flag = 0x80;
+		if(((bitmap[index])&(flag>>index2)) == 0)	//WATCH OUT: the precedence of comparison and bitwise operators
+		{
+			return;		//the slot is empty (no record)
+		}
+		else
+		{
+			bitmap[index] &= ~(flag>>index2);
+		}
+	}
 	//get the pointer to the memory that directly points to slot for the tuple
 	unsigned char *tuple = (unsigned char *)page->data + sizeof(int) + bitmapLength + slot * tuple_size;
 	for(j = 0; j < r->size(); j++)
@@ -197,7 +223,9 @@ void read_fixed_len_page(Page *page, int slot, Record *r)
 	//int bitmapLength = ceil(capacity/BYTE_SIZE);
 	int bitmapLength = (capacity/BYTE_SIZE) + (capacity%BYTE_SIZE == 0 ? 0 : 1);
 	//check that the specified record at slot has content
-	unsigned char bitmap[bitmapLength] = { 0 };
+	unsigned char *bitmap = (unsigned char *)malloc(bitmapLength);
+	//unsigned char bitmap[bitmapLength];
+	
 	//index is the byte number in the directory
 	int index = slot/BYTE_SIZE;
 	memcpy(bitmap, ((unsigned char *)page->data + sizeof(int)), bitmapLength);
@@ -207,6 +235,7 @@ void read_fixed_len_page(Page *page, int slot, Record *r)
 	uint8_t flag = 0x80;
 	if(((byte)&(flag>>index2)) == 0)	//WATCH OUT: the precedence of comparison and bitwise operators
 	{
+		free(bitmap);
 		return;		//the slot is empty (not record)
 	}
 		
@@ -221,6 +250,7 @@ void read_fixed_len_page(Page *page, int slot, Record *r)
 		r->push_back(buffer);
 		tuple = tuple + lengthAttribute;
 	}
+	free(bitmap);
 	//free(tuple);
 }
 
@@ -234,7 +264,9 @@ void init_heapfile(Heapfile *heapfile, int page_size, FILE *file)
 	rewind(file);		//make sure that the file stream is at the head of the file
 	heapfile->page_size = page_size;
 	heapfile->file_ptr = file;
-	unsigned char buffer[page_size] = { 0 };
+	//unsigned char buffer[page_size] = { 0 };
+	unsigned char *buffer = (unsigned char *)malloc(page_size);
+	
 	//long pointer = -1;
 	//fwrite(&pointer, sizeof(long), 1, file);
 	int entryPerPage = page_size/sizeof(PageEntry);
@@ -244,10 +276,12 @@ void init_heapfile(Heapfile *heapfile, int page_size, FILE *file)
 	{
 		// initialize all page pointers to -1 (NULL)
 		directoryEntry[i].offset = -1;
+		directoryEntry[i].freeslots = 0;
 	}
 	fwrite(buffer, page_size, 1, heapfile->file_ptr);
 	fflush(heapfile->file_ptr);
 	rewind(heapfile->file_ptr);
+	free(buffer);
 }
 
 // Allocate another page in the heapfile. This grows the file by a page.
@@ -257,7 +291,12 @@ PageID alloc_page(Heapfile *heapfile)
 	// 2. initialize the a page to all zeros by writing past the eof pagesize bytes
 	// 3. update the directory by appending a new page entry
 	FILE *stream = heapfile->file_ptr;
-
+	Page *page = (Page *)malloc(sizeof(Page));
+	page->page_size = heapfile->page_size;
+	page->slot_size = numAttribute*lengthAttribute;
+	int capacity = fixed_len_page_capacity(page);
+	int freeslots = capacity;
+	
 	// 1. goto the end of the file and extend the file size by 1 page by writing past the end-of-file
 	fseek(stream, 0, SEEK_END);
 	if(!feof(stream))
@@ -265,7 +304,9 @@ PageID alloc_page(Heapfile *heapfile)
 	assert(feof(stream));
 	long newpage = ftell(stream);
 	//printf("the offset of the new page is %d\n", newpage);
-	unsigned char array[heapfile->page_size] = { 0x0 };
+	//unsigned char array[heapfile->page_size] = { 0x0 };
+	unsigned char *array = (unsigned char *)malloc(heapfile->page_size);
+	
 	size_t size = fwrite(array, heapfile->page_size, 1, stream);
 	fflush(stream);
 	// making sure that the maximum file size of the filesystem is not exceeded
@@ -283,7 +324,9 @@ PageID alloc_page(Heapfile *heapfile)
 	
 	// navigate to the last directory and check if a new page record can be appended to the end or a new directory needs to be created
 	FILE *stream1 = heapfile->file_ptr;
-	unsigned char buffer[heapfile->page_size] = { 0 };
+	//unsigned char buffer[heapfile->page_size] = { 0 };
+	unsigned char *buffer = (unsigned char *)malloc(heapfile->page_size);
+	
 	long nextdir = 0, currentdir = 0;
 	int count = -1, index =0;
 	PageEntry *ptr;
@@ -311,7 +354,7 @@ PageID alloc_page(Heapfile *heapfile)
 	if(i <= entryPerPage)
 	{
 		// can just append a new page entry to the end of the directory (ie. the directory is not full)
-		entry[i].freeslots = heapfile->page_size;
+		entry[i].freeslots = freeslots;
 		entry[i].offset = newpage;
 		//DO NOT FORGET TO WRITE BACK THE UPDATED DIRECTORY!
 		fseek(stream1, currentdir, SEEK_SET);
@@ -336,8 +379,8 @@ PageID alloc_page(Heapfile *heapfile)
 		directoryEntry[0].freeslots = 0;
 		
 		directoryEntry[1].offset = newpage;
-		directoryEntry[1].freeslots = heapfile->page_size;
-		for(i = 2; i < entryPerPage; i++)
+		directoryEntry[1].freeslots = freeslots;
+		for(i = 2; i <= entryPerPage; i++)
 		{
 			// initialize all remaining page pointers to -1
 			directoryEntry[i].offset = -1;
@@ -370,46 +413,58 @@ PageID alloc_page(Heapfile *heapfile)
 	}
 	rewind(heapfile->file_ptr);
 	assert(newpage%(heapfile->page_size) == 0);
+	free(buffer);
+	free(array);
 	return (count*entryPerPage)+i;
 }
 
 // Read a page into memory.
-void read_page(Heapfile *heapfile, PageID pid, Page *page)
+int read_page(Heapfile *heapfile, PageID pid, Page *page)
 {
 	assert(heapfile->page_size == page->page_size);
 	FILE *stream = heapfile->file_ptr;
 	//if(page == NULL)
 	//	page = (Page *)malloc(sizeof(Page));
 	PageEntry entry = { -1, 0};
-	readHeapfileDirectory(heapfile, pid, &entry);		//(long)pid * heapfile->page_size;
+	int result = readHeapfileDirectory(heapfile, pid, &entry);		//(long)pid * heapfile->page_size;
+	if(result < 0)
+		return result;
 	fseek(stream, entry.offset, SEEK_SET);
 	fread(page->data, page->page_size, 1, stream);
 	rewind(heapfile->file_ptr);
+	return result;
 }
 
-void readHeapfileDirectory(Heapfile *heapfile, PageID pid, PageEntry *entry)
+int readHeapfileDirectory(Heapfile *heapfile, PageID pid, PageEntry *entry)
 {
 	// the first PageEntry (with index 0) is the pointer to the next directory
 	FILE *stream = heapfile->file_ptr;
 	int pagesize = heapfile->page_size;
 	//unsigned char *buffer[pagesize];
 	unsigned char *buffer = (unsigned char *)malloc(pagesize);
+	
 	//long *ptr;
 	long nextdir;
 	PageEntry *ptr;
 	PageID index = pid;
 	int entryPerPage = (pagesize/sizeof(PageEntry)) - 1;	//(pagesize - sizeof(long))/sizeof(PageEntry);
+	bool error = false;
 	while(entryPerPage < index)
 	{
 		fread(buffer, pagesize, 1, stream);
 		ptr = (PageEntry *)buffer;
 		nextdir = ptr[0].offset;
+		if(nextdir < 0)
+		{
+			free(buffer);
+			return -1;
+		}
 		fseek(stream, nextdir, SEEK_SET);
 		index -= entryPerPage;
 	}
 	fread(buffer, heapfile->page_size, 1, stream);
-	entry->offset = (((PageEntry *)buffer)[index]).offset;
-	entry->freeslots = (((PageEntry *)buffer)[index]).freeslots;
+	entry->offset = (((PageEntry *)buffer)[1+index]).offset;
+	entry->freeslots = (((PageEntry *)buffer)[1+index]).freeslots;
 	rewind(heapfile->file_ptr);
 	free(buffer);
 }
@@ -418,7 +473,9 @@ void writeHeapfileDirectory(Heapfile *heapfile, PageID pid, PageEntry *entry)
 {
 	FILE *stream = heapfile->file_ptr;
 	int pagesize = heapfile->page_size;
-	unsigned char *buffer[pagesize];
+	//unsigned char *buffer[pagesize];
+	unsigned char *buffer = (unsigned char *)malloc(pagesize);
+	
 	//long *ptr;
 	long nextdir;
 	PageEntry *ptr;
@@ -442,12 +499,13 @@ void writeHeapfileDirectory(Heapfile *heapfile, PageID pid, PageEntry *entry)
 	
 	//set the directory entry for the page
 	ptr = (PageEntry *)buffer;
-	ptr[index].freeslots = entry->freeslots;
+	ptr[1+index].freeslots = entry->freeslots;
 	
 	//write back the updated directory entry
 	fsetpos(stream, &position);
 	fwrite(buffer, heapfile->page_size, 1, stream);
 	fflush(stream);
+	free(buffer);
 }
 // Write a page from memory to disk.
 void write_page(Page *page, Heapfile *heapfile, PageID pid)
@@ -471,23 +529,153 @@ RecordIterator::RecordIterator(Heapfile *heapfile)	//completed
 {
 	int pagesize = heapfile->page_size;
 	this->file = heapfile;
-	this->stream = heapfile->file_ptr;
-	rewind(this->stream);
-	unsigned char buffer[pagesize];
-	fread(buffer, pagesize, 1, this->stream);
+	//this->stream = heapfile->file_ptr;
+	rewind(this->file->file_ptr);
+	//unsigned char buffer[pagesize];
+	unsigned char *buffer = (unsigned char *)malloc(pagesize);
+	
+	fread(buffer, pagesize, 1, heapfile->file_ptr);
 	PageEntry *iter = (PageEntry *)buffer;
 	//this->current = iter[1].offset;
-	this->index = 0;
+	this->slot = 0;
 	this->currdir = 0;
+	this->pid = 1;
+	this->index = 1;
+	this->end = false;
+	free(buffer);
+}
+int RecordIterator::searchPageNext(Page *page, int start, int capacity)
+{
+	int tempnewslot = start;
+	int bitmapLength = (capacity/BYTE_SIZE) + (capacity%BYTE_SIZE == 0 ? 0 : 1);
+	//unsigned char bitmap[bitmapLength];
+	unsigned char *bitmap = (unsigned char *)malloc(bitmapLength);
+	
+	memcpy(bitmap, ((unsigned char *)page->data + sizeof(int)), bitmapLength);
+	// find an allocated slot marked by a bit 1 in the corresponding directory
+	int i, slot;
+	uint8_t flag = 0x80;
+	for(i = tempnewslot/BYTE_SIZE; i < bitmapLength; i++)
+	{
+		if(bitmap[i] != 0x00)
+		{
+		
+			uint8_t value = bitmap[i]; 
+			value = value << (tempnewslot%BYTE_SIZE);
+			while((tempnewslot%BYTE_SIZE != 0) && ((value | 0x00) == 0))
+			{
+				value = value << 1;
+				tempnewslot++;
+			}
+			if(tempnewslot%BYTE_SIZE != 0)
+			{
+				this->slot = tempnewslot;
+				free(bitmap);
+				return 0;
+			}
+		}
+	}
+	free(bitmap);
+	return -1;	//did not found the next allocated record in current page
+}
+int RecordIterator::updatenext(Page *page)
+{
+	int slotsize = numAttribute*lengthAttribute;
+	int capacity = fixed_len_page_capacity(page);
+	int maxslots = capacity/slotsize;
+	int tempnewslot = this->slot + 1;
+	int tempnewpage = this->pid;
+	int result, searchResult;
+	//bool found = false;
+	PageEntry entry = {-1, 0};
+	if(tempnewslot >= capacity)
+	{
+		//if reached the end of the current page, try look for next record in the subsequent pages
+		tempnewpage = this->pid + 1;
+		tempnewslot = 0;
+	}
+	while((result = readHeapfileDirectory(this->file, tempnewpage, &entry)) > 0)
+	{
+		//result = readHeapfileDirectory(this->file, this->pid, &entry);
+		if(entry.freeslots < maxslots)
+		{
+			init_fixed_len_page(page, page->page_size, slotsize);
+			read_page(this->file, tempnewpage, page);
+			searchResult = this->searchPageNext(page, tempnewslot, capacity);
+			
+			assert(searchResult >= 0);
+			this->pid = tempnewpage;
+			this->slot = tempnewslot;
+			return 0;
+		}
+		tempnewslot = 0;
+		tempnewpage += 1;
+	}
+	return -1;
 }
 Record RecordIterator::next()	//incomplete
 {
+	//Record *record = new Record();
 	Record record;
-
-
+	
+	FILE *stream = this->file->file_ptr;
+	int j, pagesize = this->file->page_size;
+	Page *page = (Page *)malloc(sizeof(Page));
+	init_fixed_len_page(page, pagesize, numAttribute*lengthAttribute);
+	
+	//get the offset pointer to the current page
+	PageEntry entry = {-1, 0};
+	//unsigned char buffer[pagesize] = { 0 };
+	unsigned char *buffer = (unsigned char *)malloc(pagesize);
+	
+	int result = readHeapfileDirectory(this->file, this->pid, &entry);
+	assert(result >= 0);
+	
+	//read the current page
+	//fseek(stream, entry.offset, SEEK_SET);
+	//fread(buffer, pagesize, 1, stream);
+	read_page(this->file, this->pid, page);
+	read_fixed_len_page(page, this->slot, &record);
+	
+	updatenext(page);
+	free(buffer);
+	free(page->data);
+	free(page);
 	return record;
-
-	/*	
+	/*
+	//try to find the next record in the current page
+	int capacity = fixed_len_page_capacity(page);
+	int tempnewslot = this->slot + 1;
+	bool found = false;
+	if(tempnewslot < capacity)
+	{
+		int bitmapLength = (capacity/BYTE_SIZE) + (capacity%BYTE_SIZE == 0 ? 0 : 1);
+		unsigned char bitmap[bitmapLength];
+		memcpy(bitmap, ((unsigned char *)page->data + sizeof(int)), bitmapLength);
+		// find an allocated slot marked by a bit 1 in the corresponding directory
+		int i, slot;
+		uint8_t flag = 0x80;
+		for(i = tempnewslot/BYTE_SIZE; i < bitmapLength; i++)
+		{
+			if(bitmap[i] != 0x00)
+			{
+			
+				uint8_t value = bitmap[i]; 
+				value = value << (tempnewslot%BYTE_SIZE);
+				while((tempnewslot%BYTE_SIZE != 0) && ((value | 0x00) == 0))
+				{
+					value = value << 1;
+					tempnewslot++;
+				}
+				if(tempnewslot%BYTE_SIZE != 0)
+				{
+					this->slot = tempnewslot
+					return record;
+				}
+			}
+		}
+	}
+	
 	read_fixed_len_page(this->page, this->slot, &record);
 	if(!this->hasNext())
 		return record;
@@ -497,26 +685,55 @@ Record RecordIterator::next()	//incomplete
 	//read the current directory page and get pointer to the current record
 	unsigned char buffer[pagesize];
 	fseek(stream, this->currdir, SEEK_SET);
-	fread(buffer, pagesize, 1, stream);*/
+	fread(buffer, pagesize, 1, stream);
+	
+	
+	
+	
+	
+	
+	
+	
+	//goto the next record
+	//if(entry.offset < 0)
+	//	this->page = this->page + 1;
+	for(j = 0; j < numAttribute; j++)
+	{
+		char *buffer = (char *)malloc(lengthAttribute);
+		memcpy(buffer, tuple, lengthAttribute);
+		record->push_back(buffer);
+		tuple = tuple + lengthAttribute;
+	}
+	return record;*/
 }
-bool RecordIterator::hasNext()	//completed
+bool RecordIterator::hasNext()	//incompleted
 {
+	if(this->end)
+		return false;
+	else
+		return true;
+	/*
 	int entryPerPage = (this->file)->page_size/sizeof(PageEntry) - 1;
 	if(this->index < entryPerPage)
 		return true;
 	int pagesize = (this->file)->page_size;
+
+	//read the current directory and see if this is the last directory
 	unsigned char buffer[pagesize];
-	fseek(stream, this->currdir, SEEK_SET);
-	fread(buffer, pagesize, 1, stream);
+	fseek(this->file->file_ptr, this->currdir, SEEK_SET);
+	fread(buffer, pagesize, 1, file->file_ptr);
 	PageEntry *entry = (PageEntry *)buffer;
 	long nextdir;
-	rewind(this->stream);
+	rewind(this->file->file_ptr);
 	//if the iterator is not even at the last directory, then must not be the last record
-	if((nextdir = entry[0].offset) > 0)
+	if((entry[0].offset) > 0)
 		return true;
 	else
 		return false;
 
+	*/
+	
+	
 	
 	/*
 	int i, entryPerPage = (this->file)->page_size/sizeof(PageEntry) - 1;
@@ -534,67 +751,30 @@ bool RecordIterator::hasNext()	//completed
 	//fread(buffer, pagesize, 1, stream);
 }
 
-
-
-
-
 /*
-void writeHeapfileDirectory(Heapfile *heapfile, PageID pid, unsigned char isAllocate)
-{
-	FILE *stream = heapfile->file_ptr;
-	int pagesize = heapfile->page_size
-	long *ptr;
-	long nextdir;
-	unsigned char *buffer[pagesize];
-	PageEntry *entry;
-	if(pid > 0)
-	{
-		PageID index = pid;
-		entryPerPage = (pagesize - sizeof(long))/sizeof(PageEntry);
-		while(entryPerPage < index)	//navigate to the correct directory
+		int bitmapLength = (capacity/BYTE_SIZE) + (capacity%BYTE_SIZE == 0 ? 0 : 1);
+		unsigned char bitmap[bitmapLength];
+		memcpy(bitmap, ((unsigned char *)page->data + sizeof(int)), bitmapLength);
+		// find an allocated slot marked by a bit 1 in the corresponding directory
+		int i, slot;
+		uint8_t flag = 0x80;
+		for(i = tempnewslot/BYTE_SIZE; i < bitmapLength; i++)
 		{
-			// assuming page ID is reasonable
-			fread(buffer, heapfile->page_size, 1, stream);
-			ptr = (long *)buffer;
-			nextdir = ptr[0];
-			if(nextdir < 0)
-				return;
-			fseek(stream, nextdir, SEEK_SET);
-			index -= entryPerPage;
+			if(bitmap[i] != 0x00)
+			{
+			
+				uint8_t value = bitmap[i]; 
+				value = value << (tempnewslot%BYTE_SIZE);
+				while((tempnewslot%BYTE_SIZE != 0) && ((value | 0x00) == 0))
+				{
+					value = value << 1;
+					tempnewslot++;
+				}
+				if(tempnewslot%BYTE_SIZE != 0)
+				{
+					this->slot = tempnewslot
+					return record;
+				}
+			}
 		}
-		fread(buffer, heapfile->page_size, 1, stream);
-		entry = (PageEntry *)((unsigned char *)buffer + sizeof(long));
-		entry[index].freeslots = pagesize;
-		entry[index].offset = offset;
-		fwrite();
-	}
-	else if(pid < 0)
-	{
-		
-	}
-	if(isAllocate > 0)
-	{
-		buffer = malloc(pagesize);
-		fread(buffer, heapfile->page_size, 1, stream);
-		ptr = (long *)buffer;
-		entry = (PageEntry *)((unsigned char *)buffer + sizeof(long));
-		long nextdir = buffer
-		if((pagesize - sizeof(long))/sizeof(PageEntry) < pid)
-	}
-	else
-	{
-		// free the specified page
-		PageID index = pid;
-		entryPerPage = (pagesize - sizeof(long))/sizeof(PageEntry);
-		while(entryPerPage < index)
-		{
-			fread(ptr, heapfile->page_size, 1, stream);
-			nextdir = ptr[0];
-			fseek(stream, nextdir, SEEK_SET);
-			index -= entryPerPage;
-		}
-		fread(ptr, heapfile->page_size, 1, stream);
-		entry[index].
-	}
-}
 */
