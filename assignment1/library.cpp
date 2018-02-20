@@ -205,6 +205,7 @@ void write_fixed_len_page(Page *page, int slot, Record *r)
 		{
 			bitmap[index] &= ~(flag>>index2);
 		}
+		return;
 	}
 	//get the pointer to the memory that directly points to slot for the tuple
 	unsigned char *tuple = (unsigned char *)page->data + sizeof(int) + bitmapLength + slot * tuple_size;
@@ -466,7 +467,7 @@ int readHeapfileDirectory(Heapfile *heapfile, PageID pid, PageEntry *entry)
 		fseek(stream, nextdir, SEEK_SET);
 		index -= entryPerPage;
 	}
-	fread(buffer, heapfile->page_size, 1, stream);
+	size_t size = fread(buffer, heapfile->page_size, 1, stream);
 	if((((PageEntry *)buffer)[1+index]).offset < 0)
 	{
 		free(buffer);
@@ -549,18 +550,29 @@ RecordIterator::RecordIterator(Heapfile *heapfile)	//completed
 	this->file = heapfile;
 	//this->stream = heapfile->file_ptr;
 	rewind(this->file->file_ptr);
-	//unsigned char buffer[pagesize];
-	unsigned char *buffer = (unsigned char *)malloc(pagesize);
+	Page *page = (Page *)malloc(sizeof(Page));
+	init_fixed_len_page(page, pagesize, numAttribute*lengthAttribute);
 	
-	fread(buffer, pagesize, 1, heapfile->file_ptr);
-	PageEntry *iter = (PageEntry *)buffer;
+	
+	
+	//unsigned char *buffer = (unsigned char *)malloc(pagesize);
+	//fread(buffer, pagesize, 1, heapfile->file_ptr);
+	//PageEntry *iter = (PageEntry *)buffer;
 	//this->current = iter[1].offset;
-	this->slot = 0;
+	
+	
+	
+	this->slot = -1;
 	this->currdir = 0;
 	this->pid = 1;
 	this->index = 1;
-	this->end = false;
-	free(buffer);
+	int result = updatenext(page);
+	if(result < 0)
+		this->end = true;
+	else
+		this->end = false;
+	free(page->data);
+	free(page);
 }
 int RecordIterator::searchPageNext(Page *page, int start, int capacity)
 {

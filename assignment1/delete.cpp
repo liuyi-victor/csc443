@@ -7,6 +7,7 @@ int main(int argc, char *argv[])
 {
 	if(argc != 4)
 	{
+		fprintf(stderr, "Usage: %s <heapfile> <record_id> <page_size>\n", argv[0]);
 		return -1;
 	}
 	int pagesize = atoi(argv[3]);
@@ -14,7 +15,7 @@ int main(int argc, char *argv[])
 	{
 		return -1;
 	}
-	FILE *stream = fopen(argv[1], "w+");
+	FILE *stream = fopen(argv[1], "r+");
 	if(stream == NULL)
 	{
 		return -1;
@@ -43,7 +44,7 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 	write_fixed_len_page(page, slot, NULL);
-	
+	write_page(page, file, pid);
 	/*
 	
 	PageEntry entry = {-1, 0};

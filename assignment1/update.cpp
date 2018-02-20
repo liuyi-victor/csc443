@@ -11,7 +11,8 @@ void free_record_memory(Record *tuple)
 		free((char *)tuple->at(i));
 	tuple->clear();
 }
-
+//g++ -g update.cpp library.cpp -o update
+//./update file 1_0 0 AAAAAAAAAA 1048576
 int main(int argc, char** argv) 
 {
 	if (argc != 6) 
@@ -48,7 +49,7 @@ int main(int argc, char** argv)
 	}
 	int column = atoi(argv[3]);
 	int pagesize = atoi(argv[5]);
-	FILE *stream = fopen(argv[1], "w+");
+	FILE *stream = fopen(argv[1], "r+");
 	if(stream == NULL)
 	{
 		return -1;
