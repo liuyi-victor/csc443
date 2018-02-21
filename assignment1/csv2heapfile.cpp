@@ -57,16 +57,9 @@ int main(int argc, char** argv)
 	}
 
 	//load records from csv.
-	
-	
-	
+
 	//Get records
 	std::vector<Record*> table;	//this is basically a table in memory
-	//int count = read_records(argv[1], &table);
-	
-	
-	
-	
 	
 	FILE* file = fopen(argv[1], "r");
 	if (file == NULL)
@@ -101,22 +94,8 @@ int main(int argc, char** argv)
 		//tuple.clear();
 		count++;
 	}
-	
-	
-	
-	
 	assert(table.size() == count);
 
-	
-	
-	
-	/*
-	if (error) 
-	{
-		fprintf(stderr, "Could not read records from file: %s\n", argv[1]);
-		return 2;
-	}
-*/
 	if(table.size() == 0)
 	{
 		fprintf(stderr, "No records in file: %s\n", argv[1]);
@@ -156,7 +135,6 @@ int main(int argc, char** argv)
 		result = add_fixed_len_page(page, table.at(i));
 		if(result == -1)
 		{
-			//printf("reached here\n");
 			//page is full, need to write this page to heapfile and re-initialize page
 			write_page(page, heap, pid);
 			pid = alloc_page(heap);
@@ -166,39 +144,7 @@ int main(int argc, char** argv)
 	}
 	//write the final page to heap.
 	write_page(page, heap, pid);
-	/*
-	//Loop all records and add them to heap.
-	for(int i = 0; i < records.size(); i++)
-	{
-		printf("Record %d: ", i);
-		print_record(records.at(i));
 
-		//If page is full, create new page in heap.
-		if(add_fixed_len_page(page, records.at(i)) == -1)
-		{
-
-			//Write page back to heap.
-			write_page(page, heap, page_id);
-
-			// don't read over the zeroth page again
-			// because until we write to disk it will still seem like it has
-			// free space
-			if (page_id == 0) 
-			{
-				page_id = 1;
-			}
-
-			//Alloc new page and add record to it.
-			page_id = alloc_page(heap, dir_page, page_id);
-			//            page_id = alloc_page(heap);
-			read_page(heap, page_id, page);
-			add_fixed_len_page(page, records.at(i));
-		}
-	}
-
-	//Write our final page to heap.
-	write_page(page, heap, page_id);
-*/
 	//Calculate program end time.
 	ftime(&t);
 	long end_ms = t.time * 1000 + t.millitm;

@@ -1,9 +1,8 @@
 #include "library.h"
-//#include "csvhelper.h"
 #include <sys/timeb.h>
 #include <assert.h>
 
-//g++ -g write_fixed_length_page.cpp library.cpp -o write
+//g++ -g write_fixed_length_page.cpp library.cpp -o write_page
 
 int read_records(char *csvfile, std::vector<Record> *table)
 {
@@ -67,11 +66,10 @@ int main(int argc, char** argv)
 	}
 
 	//Open page file.
-	FILE* stream = fopen(argv[2], "w+");	//"w+b");
+	FILE* stream = fopen(argv[2], "w+");
 	if(stream == NULL)
 	{
-		//printf("Failed to open page file %s: %s\n", argv[2], strerror(errno));
-		perror("Failed to open page file: ");
+		printf("Failed to open page file: %s\n", argv[2]);
 		return 2;
 	}
 
@@ -137,11 +135,10 @@ int main(int argc, char** argv)
 	//Add records to pages
 	for(int i = 0; i < table.size(); i++)
 	{
-		print_record(table.at(i));
+		//print_record(table.at(i));
 		if(add_fixed_len_page(page, table.at(i)) == -1)
 		{
 			//The page is full, write page to file.
-			printf("writing a filled page to file\n");
 			fwrite(page->data, page->page_size, 1, stream);
 			fflush(stream);
 
@@ -160,16 +157,16 @@ int main(int argc, char** argv)
 	fflush(stream);
 	fclose(stream);
 
-	//Release page memory.
-	free(page->data);
-	free(page);
-
 	//Calculate program end time.
 	ftime(&t);
 	long end_time = t.time * 1000 + t.millitm;
 
+	//Release page memory.
+	free(page->data);
+	free(page);
+
 	//Print metrics.
-	printf("NUMBER OF RECORDS: %lu\n", table.size());
+	printf("NUMBER OF RECORDS: %d\n", table.size());
 	printf("NUMBER OF PAGES: %i\n", pagecount);
 	printf("TIME: %lu milliseconds\n", end_time - start_time);
 }
